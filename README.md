@@ -26,6 +26,7 @@ thoughts and knowledge. At the current state we are just gathering knowledge
 and information and just need input on your knowledge of sessions. So please,
 go ahead and contribute.
 
-To get started, take a look at the [Wiki](wiki) and see in which state the
-development is. If you then want to contribute something to this or previous
+To get started, take a look at the
+[Wiki](https://github.com/Javex/python_web_session/wiki) and see in which state
+the development is. If you then want to contribute something to this or previous
 steps, just let us know here.
