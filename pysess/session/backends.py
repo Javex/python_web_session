@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
+from __future__ import unicode_literals, absolute_import
 from pysess.conf import HASHALG
 from pysess.crypto import encryption_available
 from pysess.session.cookies import SignedCookie, EncryptedCookie
-from pysess.util import max_age_to_expires
+from pysess.util import max_age_to_expires, filter_internal
 import Cookie
 import binascii
 import functools
@@ -36,7 +37,8 @@ class BaseSession(object):
                               which equals 256 bits. Note, however, that the
                               acutal string will be twice as long, as it is
                               encoded as a hexadecimal.
-    :param name: Name for the cookie. Default: 'session'
+    :param name: Name for the cookie. Default: b'session', has to be a **byte**
+                 string.
     :param path: Path for the cookie. Default: '/'
     :param domain: Domain for the cookie, required.
     :param max_age: A number of seconds until the cookie expires, Default: Never
@@ -57,15 +59,17 @@ class BaseSession(object):
                        a more thorough explanation see ...
     .. todo::
         Create an explanation for why json is a good idea and how and when to
-        replace it and reference it here.
+        replace it and reference it here. Also make a note on Unicode there to
+        explain that the values returned always have to be unicode, not str.
 
     Security options:
 
     :param encryption_key: A key used for encryption, optional but recommended,
                            especially with a backend that stores data **in**
-                           the cookie.
-    :param signature_key: A key used to create a signature
-    :param hashalg: An optional hasing algorithm to use for the creation of an
+                           the cookie. Has to be a **byte** string.
+    :param signature_key: A key used to create a signature. Has to be a
+                          **byte** string.
+    :param hashalg: An optional hashing algorithm to use for the creation of an
                     HMAC (signature). Defaults to :class:`hashlib.sha256` and
                     can usally be left at its default.
 
@@ -96,7 +100,7 @@ class BaseSession(object):
         self.serializer = settings.get('serializer', json)
 
         # Cookie settings
-        self.name = settings.get('name', 'session')
+        self.name = settings.get('name', b'session')
         self.path = settings.get('path', '/')
         self.domain = settings['domain']
         self.max_age = settings.get('max_age', None)
@@ -162,21 +166,12 @@ class BaseSession(object):
         self.is_new = True
         self._data_cache = data
 
-    def _get_or_create_id(self):
-        """
-        Either return the ID or create a new one (saves the potential new ID so
-        a new session can be created with it).
-        """
-        if self.session_id is None:
-            self.session_id = self._create_id()
-        return self.session_id
-
     def _create_id(self):
         """
         Create a new session ID (but don't save it, only return it)
         """
         while True:
-            id_ = binascii.hexlify(os.urandom(self._id_length))
+            id_ = binascii.hexlify(os.urandom(self._id_length)).decode("ascii")
             if not self.exists(id_):
                 break
         log.debug("Created a new session id %s" % id_)
@@ -216,6 +211,10 @@ class BaseSession(object):
         log.debug("Setting new session id to %s" % value)
         self._cookie[self.name] = value
 
+    @property
+    def created(self):
+        return self["_creation"]
+
     # Dict interface
 
     def __contains__(self, key):
@@ -232,11 +231,12 @@ class BaseSession(object):
         self.modified = True
         self._data[key] = value
 
+    @filter_internal
     def __iter__(self):
         return iter(self._data)
 
     def __len__(self):
-        return len(self._data)
+        return len(self._data) - 2  # Remove count of own items
 
     def pop(self, key, *args):
         self.modified = self.modified or key in self
@@ -262,35 +262,45 @@ class BaseSession(object):
     def has_key(self, key):
         return self._data.has_key(key)
 
+    @filter_internal
     def items(self):
         return self._data.items()
 
+    @filter_internal
     def iteritems(self):
         return self._data.iteritems()
 
+    @filter_internal
     def iterkeys(self):
         return self._data.iterkeys()
 
     def itervalues(self):
-        return self._data.itervalues()
+        for k, v in self._data.iteritems():
+            if not k.startswith('_'):
+                yield v
 
+    @filter_internal
     def keys(self):
         return self._data.keys()
 
     def popitem(self):
-        return self._data.popitem()
+        already_modified = self.modified
+        self.modified = True
+        k, v = self._data.popitem()
+        if k.startswith("_"):
+            self._data[k] = v
+            if not already_modified:
+                self.modified = False
+            {}.popitem()  # This raises the excpetion but it's kinda hacky...
+        else:
+            return (k, v)
 
     def values(self):
-        return self._data.values()
+        return [v for k, v in self._data.items() if not k.startswith("_")]
 
-    def viewitems(self):
-        return self._data.viewitems()
-
-    def viewkeys(self):
-        return self._data.viewkeys()
-
-    def viewvalues(self):
-        return self._data.viewvalues()
+    # TODO: Should we implement the view{items,keys,values} function and if
+    # yes, how? On the same page could be how to port the app it to Python 3.
+    # See: http://stackoverflow.com/questions/17749866/subclassing-datatypes-that-have-views-in-python2-7-and-python3
 
     # Utility functions that are usually not overwritten
 

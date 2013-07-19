@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-from pysess.conf import HASHALG
+from __future__ import unicode_literals, absolute_import
 import hmac
 from pysess.util import compare_constant_time
-import os
-import hashlib
 
 
-def verify_data(data, signature, sig_key, hashalg=HASHALG):
+def verify_data(data, signature, sig_key, hashalg):
     """
     Check whether ``data`` is authentic for ``signature`` with the key
     ``sig_key``.
@@ -15,15 +13,14 @@ def verify_data(data, signature, sig_key, hashalg=HASHALG):
         ``sig_key`` must be a byte string of a sufficient length (recommended
         is ``32`` bytes).
     """
-    if isinstance(data, unicode):
-        data = data.encode('utf-8')
+    data = data.encode('utf-8')
     reference = authenticate_data(data, sig_key, hashalg)
     if not compare_constant_time(reference, signature):
         raise ValueError("Invalid Signature")
     else:
         return True
 
-def authenticate_data(data, sig_key, hashalg=HASHALG):
+def authenticate_data(data, sig_key, hashalg):
     """
     Create a signature for ``data`` with ``sig_key``.
 
@@ -31,9 +28,10 @@ def authenticate_data(data, sig_key, hashalg=HASHALG):
         ``sig_key`` must be a byte string of a sufficient length (recommended
         is ``32`` bytes).
     """
-    if isinstance(data, unicode):
-        data = data.encode('utf-8')
-    return hmac.new(sig_key, data, hashalg).hexdigest()
+    data = data.encode('utf-8')
+    if isinstance(sig_key, unicode):
+        raise TypeError("The key must be a **byte** string not unicode!")
+    return hmac.new(sig_key, data, hashalg).hexdigest().decode("ascii")
 
 
 def get_hash_length(hashalg):
@@ -73,12 +71,20 @@ def encrypt_then_authenticate(data, enc_key, hmac_key, hashalg):
     """
     from Crypto.Cipher import AES
     from Crypto.Util import Counter
+    data = data.encode('utf-8')
+
+    if isinstance(enc_key, unicode):
+        raise TypeError("The encryption key must be a **byte** string not "
+                        "unicode.")
+    if isinstance(hmac_key, unicode):
+        raise TypeError("The hmac key must be a **byte** string not unicode.")
+
     ctr = Counter.new(128)  # Length is half of the block size in bits
     cipher = AES.new(enc_key, AES.MODE_CTR, counter=ctr)
     ciphertext = cipher.encrypt(data)
     tag = hmac.new(hmac_key, ciphertext, hashalg)
 
-    return ciphertext, tag.hexdigest()
+    return ciphertext, tag.hexdigest().decode("ascii")
 
 
 def decrypt_authenticated(ciphertext, tag, enc_key, hmac_key, hashalg):
@@ -113,5 +119,7 @@ def decrypt_authenticated(ciphertext, tag, enc_key, hmac_key, hashalg):
 
     cipher = AES.new(enc_key, AES.MODE_CTR, counter=Counter.new(128))
     plaintext = cipher.decrypt(ciphertext)
-
-    return plaintext
+    try:
+        return plaintext.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError("Could not retrieve plaintext back properly")

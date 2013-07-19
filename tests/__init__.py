@@ -1,7 +1,10 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals, absolute_import
 import pytest
 import pysess
 from pysess.session.backends import DogpileSession
 from dogpile.cache import make_region
+from tests.test_crypto import test_sig_key
 
 cache = {}  # dict for region cache
 
@@ -11,7 +14,7 @@ def sessionmaker():
                             arguments={'cache_dict': cache})
     settings = {'backend': 'dogpile',
               'domain': 'example.com',
-              'signature_key': '0' * 20,
+              'signature_key': test_sig_key,
               'region': region,
               }
 

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import unicode_literals, absolute_import
 import Cookie
 from pysess.crypto import authenticate_data, get_hash_length, verify_data, \
     decrypt_authenticated, encrypt_then_authenticate
@@ -29,7 +30,7 @@ class SignedCookie(Cookie.BaseCookie):
         orig_val = val
         val = self.serializer.dumps(val)
         sig = authenticate_data(val, self.sig_key, self.hashalg)
-        return orig_val, base64.b64encode("%s%s" % (sig, val))
+        return orig_val, base64.b64encode(b"{0}{1}".format(sig, val))
 
 
 class EncryptedCookie(SignedCookie):
@@ -53,4 +54,4 @@ class EncryptedCookie(SignedCookie):
         val = self.serializer.dumps(val)
         ciphertext, sig = encrypt_then_authenticate(val, self.enc_key,
                                                     self.sig_key, self.hashalg)
-        return orig_val, base64.b64encode("%s%s" % (sig, ciphertext))
+        return orig_val, base64.b64encode(b"{0}{1}".format(sig, ciphertext))

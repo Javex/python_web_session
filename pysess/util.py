@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals, absolute_import, print_function
+from __future__ import unicode_literals, absolute_import
 import time
 from email.utils import formatdate
+from functools import wraps
 
 
 def create_secret_file(path, encrypt_key_size=32, signature_key_size=32):
@@ -17,14 +18,14 @@ def get_secret_keys(path):
     Return the secret keys for encryption and authentication as a tuple where
     those keys that are unavailable are ``None``.
     """
-    pass
+    return (None, None)
 
 
 def get_or_create_secret_keys(path, *args, **kwargs):
     """
     Return the secret keys, creating them if they are not already available.
     """
-    pass
+    return (None, None)
 
 
 def compare_constant_time(val1, val2):
@@ -54,3 +55,37 @@ def max_age_to_expires(max_age, fromtime=None):
     expires_time = fromtime + max_age
     rfcdate = formatdate(expires_time)
     return '{0}-{1}-{2} GMT'.format(rfcdate[:7], rfcdate[8:11], rfcdate[12:25])
+
+
+def filter_internal(func):
+    """
+    Wrap an iterator or list function to filter parameters that start with '_'.
+    """
+    @wraps(func)
+    def _filter(*args, **kwargs):
+        ret = func(*args, **kwargs)
+        if isinstance(ret, list):
+            ret_list = []
+            for item in ret:
+                if isinstance(item, tuple) and len(item) == 2:
+                    k, __ = item
+                    if not k.startswith("_"):
+                        ret_list.append(item)
+                else:
+                    if not item.startswith("_"):
+                        ret_list.append(item)
+            return ret_list
+        else:
+            return _generator_filter(ret)
+    return _filter
+
+
+def _generator_filter(gen):
+    for item in gen:
+        if isinstance(item, tuple) and len(item) == 2:
+            k, v = item
+            if not k.startswith("_"):
+                yield (k, v)
+        else:
+            if not item.startswith("_"):
+                yield item
