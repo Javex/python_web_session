@@ -53,8 +53,8 @@ def max_age_to_expires(max_age, fromtime=None):
     if fromtime is None:
         fromtime = time.time()
     expires_time = fromtime + max_age
-    rfcdate = formatdate(expires_time)
-    return '{0}-{1}-{2} GMT'.format(rfcdate[:7], rfcdate[8:11], rfcdate[12:25])
+    rfcdate = formatdate(expires_time, usegmt=True)
+    return '{0}-{1}-{2}'.format(rfcdate[:7], rfcdate[8:11], rfcdate[12:])
 
 
 def filter_internal(func):

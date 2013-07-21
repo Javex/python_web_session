@@ -13,14 +13,13 @@ log = logging.getLogger(__name__)
 
 class sessionmaker(object):
 
-    backend = None
-    session_class = None
-
     def __init__(self, **settings):
         """
         Create a session factory that, upon execution, returns a new session
         object.
         """
+        self.backend = None
+        self.session_class = None
         self.configure(**settings)
 
     def __call__(self, cookie=None, **settings):

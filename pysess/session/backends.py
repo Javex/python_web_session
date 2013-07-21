@@ -83,14 +83,13 @@ class BaseSession(object):
         whatnot and reference it here.
     """
 
-    modified = False
-    accessed = False
-    is_new = False
-    has_encryption = False
-    _saved = False
-    _data_cache = None
-
     def __init__(self, cookie=None, **settings):
+        self.modified = False
+        self.accessed = False
+        self.is_new = False
+        self.has_encryption = False
+        self._saved = False
+        self._data_cache = None
         log.debug("Recieved cookie '%s'" % cookie)
         self._id_length = settings.get('session_id_length', 32)
         self.enc_key = settings.get('encryption_key', None)
