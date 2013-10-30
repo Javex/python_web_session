@@ -35,7 +35,8 @@ class SignedCookie(Cookie.BaseCookie):
 
 class EncryptedCookie(SignedCookie):
 
-    def __init__(self, serializer, signature_key, hashalg, enc_key, *args, **kwargs):
+    def __init__(self, serializer, signature_key, hashalg, enc_key, *args,
+                 **kwargs):
         self.enc_key = enc_key
         SignedCookie.__init__(self, serializer, signature_key, hashalg,
                               *args, **kwargs)

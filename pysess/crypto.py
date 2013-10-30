@@ -2,6 +2,15 @@
 from __future__ import unicode_literals, absolute_import
 import hmac
 from pysess.util import compare_constant_time
+from pysess.exc import CryptoError
+
+conf = {}
+try:
+    from Crypto.Cipher import AES
+except ImportError:
+    conf["encryption_available"] = False
+else:
+    conf["encryption_available"] = True
 
 
 def verify_data(data, signature, sig_key, hashalg):
@@ -19,6 +28,7 @@ def verify_data(data, signature, sig_key, hashalg):
         raise ValueError("Invalid Signature")
     else:
         return True
+
 
 def authenticate_data(data, sig_key, hashalg):
     """
@@ -46,12 +56,8 @@ def encryption_available():
     Check whether we can run encryption. Currently this requires pycrypto with
     no other implementation supported.
     """
-    try:
-        from Crypto.Cipher import AES
-    except ImportError:
-        return False
-    else:
-        return True
+    return conf["encryption_available"]
+
 
 def encrypt_then_authenticate(data, enc_key, hmac_key, hashalg):
     """
@@ -69,7 +75,8 @@ def encrypt_then_authenticate(data, enc_key, hmac_key, hashalg):
     Returns:
         Tuple of ``(ciphertext, tag)`` where tag is the ``hexdigest()`` output.
     """
-    from Crypto.Cipher import AES
+    if not encryption_available():
+        raise CryptoError("pycrypto is not available.")
     from Crypto.Util import Counter
     data = data.encode('utf-8')
 

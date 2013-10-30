@@ -9,6 +9,7 @@ import hmac
 test_enc_key = b'0' * 32
 test_sig_key = b'1' * 32
 
+
 @pytest.fixture(params=['test', 'tést'])
 def authenced(request):
     testval = request.param
@@ -20,6 +21,7 @@ def authenced(request):
 @pytest.fixture
 def authed():
     return authenticate_data('test', test_sig_key, hashlib.sha256)
+
 
 def test_encryption(authenced):
     testval, ciphertext, tag = authenced
@@ -77,7 +79,8 @@ def test_encryption_key_type_check():
 
 
 def test_get_hash_length():
-    for algname, length in [('md5', 128), ('sha1', 160), ('sha256', 256), ('sha512', 512)]:
+    for algname, length in [('md5', 128), ('sha1', 160), ('sha256', 256),
+                            ('sha512', 512)]:
         alg = getattr(hashlib, algname)
         assert get_hash_length(alg) == length
 
@@ -95,9 +98,11 @@ def test_authentication_wrong_hashalg(authed):
     with pytest.raises(ValueError):
         verify_data('test', authed, test_sig_key, hashlib.md5)
 
+
 def test_authentication_bad_key(authed):
     with pytest.raises(ValueError):
         verify_data('test', authed, b'0' + test_sig_key[1:], hashlib.sha256)
+
 
 def test_authentication_key_type_check():
     with pytest.raises(TypeError):

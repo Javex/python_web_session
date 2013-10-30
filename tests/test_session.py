@@ -5,9 +5,7 @@ import pytest
 from pysess.conf import HASHALG
 import json
 from pysess.session.cookies import SignedCookie
-from tests import sessionmaker, cache, existing_session
 import logging
-import time
 import pickle
 import base64
 import hashlib
@@ -25,15 +23,21 @@ Tests to create:
 - secret file instead of static keys
 - Just work with the session without any noticing
 - Invalid signatures & encryption lead to fails & logging
+- Unavailable encryption raises Error if key is given
+- Encryption Module available & unavailable
+- Implement and test some kind of concurrency mechanism: We need to have a
+  strategy for when a session is accessed from multiple locations (locking?)
+  see https://github.com/Javex/python_web_session/wiki/Race-Conditions for
+  details.
 
 """
 
 
 def test_session_default_params():
     with pytest.raises(KeyError):
-        sess = BaseSession()
+        BaseSession()
     with pytest.raises(KeyError):
-        sess = BaseSession(signature_key='')
+        BaseSession(signature_key='')
     sess = BaseSession(signature_key='', domain='example.com')
 
     assert sess._id_length == 32
@@ -91,29 +95,29 @@ def test_session_custom_crypto(sessionmaker):
     assert session2["kéy"] == "valué"
 
 
-def test_session_new(sessionmaker):
+def test_session_new(sessionmaker, cache_dict):
     session = sessionmaker()
-    log.debug("Current cache: %s" % cache)
+    log.debug("Current cache: %s" % cache_dict)
     assert session.is_new
     assert not session.modified
     assert not session.accessed
     assert session._data_cache is None
     assert session.created
-    log.debug("Current cache: %s" % cache)
+    log.debug("Current cache: %s" % cache_dict)
 
     session["testkey"] = "testval"
     assert session._data_cache
     assert session["testkey"] == "testval"
-    log.debug("Current cache: %s" % cache)
+    log.debug("Current cache: %s" % cache_dict)
 
     assert session.session_id
     cookie = session.save()
-    log.debug("Current cache: %s" % cache)
+    log.debug("Current cache: %s" % cache_dict)
 
     log.debug("Creating new session from cookie %s" % cookie)
-    log.debug("Current cache: %s" % cache)
+    log.debug("Current cache: %s" % cache_dict)
     new_session = sessionmaker(str(cookie))
-    log.debug("Current cache: %s" % cache)
+    log.debug("Current cache: %s" % cache_dict)
     log.debug("Testing value")
     assert new_session["testkey"] == "testval"
 
@@ -230,6 +234,27 @@ def test_session(sessionmaker):
     log.debug("Data: %s" % session2._data)
     assert session2["kéy"] == "valué"
     assert session2.created == old_creation
+
+
+def test_session_delete_other(sessionmaker):
+    sess1 = sessionmaker()
+    sess1["key"] = "value1"
+    sess1_id = sess1.session_id
+    cookie1 = sess1.save()
+
+    sess2 = sessionmaker()
+    sess2["key"] = "value2"
+    sess2._delete_data(sess1.session_id)
+    cookie2 = sess2.save()
+
+    sess2_old = sessionmaker(str(cookie2))
+    assert sess2_old["key"] == "value2"
+    assert sess2_old.session_id == sess2.session_id
+
+    sess1_old = sessionmaker(str(cookie1))
+    assert sess1_id == sess1_old.session_id
+    assert "key" not in sess1_old
+    assert sess1_id != sess1_old.session_id
 
 
 def test_refresh(sessionmaker):

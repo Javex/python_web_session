@@ -11,7 +11,6 @@ import json
 import os
 import time
 import logging
-from Cookie import Morsel
 
 
 """
@@ -25,7 +24,7 @@ log = logging.getLogger(__name__)
 
 class BaseSession(object):
     """
-    Create a new session or load an existing for the backend. The general
+    Create a new session or load an existing from the backend. The general
     options available to all backends are described here, options specific to
     the backend can be found in its documentation.
 
@@ -106,13 +105,14 @@ class BaseSession(object):
         self.secure = settings.get('secure', False)
         self.httponly = settings.get('httponly', False)
 
+        # Make sure if we have an encryption key that we are also able to
+        # encrypt.
         if self.enc_key:
             enc_avail = encryption_available()
             if not enc_avail:
                 raise ValueError("Encryption key was given but encryption is "
                                  "not available.")
             self.has_encryption = enc_avail
-
 
         # Choose the correct class for creating a cookie and prepare it
         if self.enc_key and self.has_encryption:
@@ -132,7 +132,8 @@ class BaseSession(object):
             self._cookie = CookieClass(input=cookie)
             cookie_val = self._cookie.get(self.name)
             log.debug('Loaded old cookie with session ID %s from input %s'
-                      % (cookie_val.value if cookie_val is not None else None, cookie))
+                      % (cookie_val.value if cookie_val is not None else None,
+                         cookie))
         except Cookie.CookieError as e:
             log.debug('Creating new cookie because of the following '
                       'exception: %s' % e)
@@ -149,14 +150,16 @@ class BaseSession(object):
         self.accessed = True
         if self._data_cache is None:
             if self.session_id is None or self.is_new:
-                log.debug("Creating a new cache due to session id being %s and "
-                          "new status being %s" % (self.session_id, self.is_new))
+                log.debug("Creating a new cache due to session id being %s "
+                          "and new status being %s"
+                          % (self.session_id, self.is_new))
                 self._new_data_cache()
             else:
                 self.load()
         return self._data_cache
 
     def _new_data_cache(self):
+        log.debug("Creating new data cache")
         self.session_id = self._create_id()
         data = {}
         now = time.time()
@@ -202,7 +205,8 @@ class BaseSession(object):
             return val
         except KeyError:
             # There is none yet, create a new one then try again
-            self.session_id = self._create_id()
+            log.debug("Creating a new session because none exists yet")
+            self._new_data_cache()
             return self.session_id
 
     @session_id.setter
@@ -298,7 +302,7 @@ class BaseSession(object):
         return [v for k, v in self._data.items() if not k.startswith("_")]
 
     # TODO: Should we implement the view{items,keys,values} function and if
-    # yes, how? On the same page could be how to port the app it to Python 3.
+    # yes, how? On the same page could be how to port the app to Python 3.
     # See: http://stackoverflow.com/questions/17749866/subclassing-datatypes-that-have-views-in-python2-7-and-python3
 
     # Utility functions that are usually not overwritten
@@ -345,7 +349,6 @@ class BaseSession(object):
         self._update_cookie()
         return self._cookie
 
-
     def load(self):
         """
         Load the session data and also make sure the data is not expired.
@@ -354,6 +357,7 @@ class BaseSession(object):
         data = self._load_data()
         log.debug("Loaded data %s" % data)
 
+        # Check if the data is expired
         expired = False
         if data and self.max_age:
             max_age = self.max_age
@@ -463,21 +467,21 @@ class DogpileSession(BaseSession):
         from dogpile import cache
         self.dpcache = cache
 
-    @property
-    def _data_key(self):
-        k = "session_%s" % self.session_id
-        log.debug("Created key %s from session id %s" % (k, self.session_id))
+    def _data_key(self, session_id=None):
+        if session_id is None:
+            session_id = self.session_id
+        k = "session_%s" % session_id
         return k
 
     def _save_data(self):
-        self.region.set(self._data_key, self._data)
+        self.region.set(self._data_key(), self._data)
 
     def _delete_data(self, session_id):
-        self.region.delete(self._data_key)
+        self.region.delete(self._data_key(session_id))
 
     def _load_data(self):
-        log.debug("Loading data with key %s" % self._data_key)
-        data = self.region.get(self._data_key)
+        log.debug("Loading data with key %s" % self._data_key())
+        data = self.region.get(self._data_key())
         log.debug("Recieved data %s" % data)
         return data or None
 
@@ -488,4 +492,20 @@ class DogpileSession(BaseSession):
 
 
 class CookieSession(BaseSession):
-    pass
+    def _save_data(self):
+        self._cookie[self.name]["data"] = self._data_cache.copy()
+
+    def _delete_data(self, session_id):
+        del self._cookie[self.name]["data"]
+
+    def _load_data(self):
+        return self._cookie[self.name]["data"]
+
+    def exists(self, session_id):
+        # Not possible for cookies, but also not required
+        pass
+
+    @classmethod
+    def cleanup(cls):
+        # Not necessary for cookies
+        pass

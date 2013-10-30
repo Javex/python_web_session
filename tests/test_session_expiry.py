@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, absolute_import
-from tests import sessionmaker
-import time
 import logging
 
 
 log = logging.getLogger(__name__)
+
 
 def test_refresh_on_access(sessionmaker):
     sessionmaker.settings["max_age"] = 10
