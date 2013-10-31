@@ -5,12 +5,16 @@ from pysess.util import compare_constant_time
 from pysess.exc import CryptoError
 
 conf = {}
-try:
-    from Crypto.Cipher import AES
-except ImportError:
-    conf["encryption_available"] = False
-else:
-    conf["encryption_available"] = True
+
+
+def _check_encryption_available():
+    try:
+        from Crypto.Cipher import AES
+    except ImportError:
+        return False
+    else:
+        return True
+conf["encryption_available"] = _check_encryption_available()
 
 
 def verify_data(data, signature, sig_key, hashalg):
@@ -22,7 +26,8 @@ def verify_data(data, signature, sig_key, hashalg):
         ``sig_key`` must be a byte string of a sufficient length (recommended
         is ``32`` bytes).
     """
-    data = data.encode('utf-8')
+    if isinstance(data, unicode):
+        data = data.encode('utf-8')
     reference = authenticate_data(data, sig_key, hashalg)
     if not compare_constant_time(reference, signature):
         raise ValueError("Invalid Signature")
@@ -38,7 +43,8 @@ def authenticate_data(data, sig_key, hashalg):
         ``sig_key`` must be a byte string of a sufficient length (recommended
         is ``32`` bytes).
     """
-    data = data.encode('utf-8')
+    if isinstance(data, unicode):
+        data = data.encode('utf-8')
     if isinstance(sig_key, unicode):
         raise TypeError("The key must be a **byte** string not unicode!")
     return hmac.new(sig_key, data, hashalg).hexdigest().decode("ascii")
@@ -51,11 +57,17 @@ def get_hash_length(hashalg):
     return len(hashalg().digest()) * 8
 
 
-def encryption_available():
+def encryption_available(recheck=False):
     """
     Check whether we can run encryption. Currently this requires pycrypto with
-    no other implementation supported.
+    no other implementation supported. Unless you pass in ``recheck=True``,
+    this function will use the check made at import time. However, by giving
+    ``recheck=True`` you can actually make it update that configuration, so in
+    case pycrypto becomes available later, just call this once after you have
+    made it available and pass in the ``recheck=True`` setting.
     """
+    if recheck:
+        conf["encryption_available"] = _check_encryption_available()
     return conf["encryption_available"]
 
 
@@ -75,10 +87,12 @@ def encrypt_then_authenticate(data, enc_key, hmac_key, hashalg):
     Returns:
         Tuple of ``(ciphertext, tag)`` where tag is the ``hexdigest()`` output.
     """
+    from Crypto.Cipher import AES
     if not encryption_available():
         raise CryptoError("pycrypto is not available.")
     from Crypto.Util import Counter
-    data = data.encode('utf-8')
+    if isinstance(data, unicode):
+        data = data.encode('utf-8')
 
     if isinstance(enc_key, unicode):
         raise TypeError("The encryption key must be a **byte** string not "
@@ -116,7 +130,8 @@ def decrypt_authenticated(ciphertext, tag, enc_key, hmac_key, hashalg):
         The plain text
 
     Raises:
-        :exc:`ValueError` when authentication fails.
+        :exc:`ValueError` when authentication fails or no plaintext could be
+        decrypted.
     """
     from Crypto.Cipher import AES
     from Crypto.Util import Counter

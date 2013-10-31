@@ -2,15 +2,16 @@
 from __future__ import unicode_literals, absolute_import
 from pysess.conf import HASHALG
 from pysess.crypto import encryption_available
+from pysess.exc import CryptoError
 from pysess.session.cookies import SignedCookie, EncryptedCookie
 from pysess.util import max_age_to_expires, filter_internal
 import Cookie
 import binascii
 import functools
 import json
+import logging
 import os
 import time
-import logging
 
 
 """
@@ -30,19 +31,37 @@ class BaseSession(object):
 
     Cookie parameters:
 
-    :param cookie: A string specifying the cookie (or a set of cookies) which
-                   also contain the session cookie.
+    :param str cookie: A string specifying the cookie (or a set of cookies)
+                       which also contain the session cookie.
+
     :param session_id_length: Length of the session ID in bytes, Default: 32,
                               which equals 256 bits. Note, however, that the
                               acutal string will be twice as long, as it is
                               encoded as a hexadecimal.
-    :param name: Name for the cookie. Default: b'session', has to be a **byte**
-                 string.
-    :param path: Path for the cookie. Default: '/'
+    :type session_id_length: int
+
+    :param name: Name for the cookie. Default: ``b'session'``, has to be a
+                **byte** string.
+    :type name: str
+
+    :param path: Path for the cookie. Default: ``'/'``
+    :type path: str
+
     :param domain: Domain for the cookie, required.
-    :param max_age: A number of seconds until the cookie expires, Default: Never
-    :param secure: Whether to restrict the cookie to HTTPS, Default: False
-    :param httponly: Whether to set the httponly flag, Default: False
+    :type domain: str
+
+    :param max_age: A number of seconds until the cookie expires,
+                    Default: Session cookie (expires after browser closes). In
+                    this case, the backend will not delete or expire the cookie
+                    in any way but the browser will delete it once it is
+                    closed.
+    :type max_age: str
+
+    :param secure: Whether to restrict the cookie to HTTPS, Default: ``False``
+    :type secure: bool
+
+    :param httponly: Whether to set the httponly flag, Default: ``False``
+    :type httponly: bool
 
 
     General configuration:
@@ -50,12 +69,15 @@ class BaseSession(object):
     :param refresh_on_access: Whether to refresh the session lifetime when it
                               is accessed or instead leave it at a static
                               expiration from the moment it was created.
-                              Default: True, meaning it will refresh the
+                              Default: ``True``, meaning it will refresh the
                               session each time it is accessed.
+    :type refresh_on_access: bool
+
     :param serializer: Which method to use to serialize data, Default: json.
                        Pass in a module or object that has methods ``loads``
                        and ``dumps``, for example pickle, to change this. For
                        a more thorough explanation see ...
+
     .. todo::
         Create an explanation for why json is a good idea and how and when to
         replace it and reference it here. Also make a note on Unicode there to
@@ -66,8 +88,10 @@ class BaseSession(object):
     :param encryption_key: A key used for encryption, optional but recommended,
                            especially with a backend that stores data **in**
                            the cookie. Has to be a **byte** string.
+
     :param signature_key: A key used to create a signature. Has to be a
                           **byte** string.
+
     :param hashalg: An optional hashing algorithm to use for the creation of an
                     HMAC (signature). Defaults to :class:`hashlib.sha256` and
                     can usally be left at its default.
@@ -83,6 +107,9 @@ class BaseSession(object):
     """
 
     def __init__(self, cookie=None, **settings):
+        if (cookie is not None and not isinstance(cookie, str)):
+            raise ValueError("Cookie must be str or unicode, cast it "
+                             "explicitly")
         self.modified = False
         self.accessed = False
         self.is_new = False
@@ -110,12 +137,12 @@ class BaseSession(object):
         if self.enc_key:
             enc_avail = encryption_available()
             if not enc_avail:
-                raise ValueError("Encryption key was given but encryption is "
-                                 "not available.")
+                raise CryptoError("Encryption key was given but encryption is "
+                                  "not available.")
             self.has_encryption = enc_avail
 
         # Choose the correct class for creating a cookie and prepare it
-        if self.enc_key and self.has_encryption:
+        if self.has_encryption:
             CookieClass = functools.partial(EncryptedCookie,
                                             self.serializer,
                                             self.sig_key,
@@ -127,20 +154,23 @@ class BaseSession(object):
                                             self.sig_key,
                                             self.hashalg)
 
-        # Load the cookie data and on error create a new cookie
-        try:
-            self._cookie = CookieClass(input=cookie)
-            cookie_val = self._cookie.get(self.name)
-            log.debug('Loaded old cookie with session ID %s from input %s'
-                      % (cookie_val.value if cookie_val is not None else None,
-                         cookie))
-        except Cookie.CookieError as e:
-            log.debug('Creating new cookie because of the following '
-                      'exception: %s' % e)
+        if cookie:
+            # Load the cookie data and on error create a new cookie
+            try:
+                self._cookie = CookieClass(input=cookie)
+                sess_id = self._get_session_id_from_cookie()
+                log.debug('Loaded old cookie with session ID %s from input %s'
+                          % (sess_id,
+                             cookie))
+            except Cookie.CookieError as e:
+                log.debug('Creating new cookie because of the following '
+                          'exception: %s' % e)
+                self._cookie = CookieClass(input=None)
+        else:
+            log.debug("Starting new session because of empty cookie.")
             self._cookie = CookieClass(input=None)
 
-        if (self._cookie.get(self.name) is None
-                or self._cookie[self.name].value is None):
+        if self._get_session_id_from_cookie() is None:
             self.is_new = True
 
     # Internal functions, usually not overwritten
@@ -153,20 +183,24 @@ class BaseSession(object):
                 log.debug("Creating a new cache due to session id being %s "
                           "and new status being %s"
                           % (self.session_id, self.is_new))
-                self._new_data_cache()
+                self._new_data_cache(self.session_id)
             else:
                 self.load()
         return self._data_cache
 
-    def _new_data_cache(self):
+    def _new_data_cache(self, existing_id=None):
         log.debug("Creating new data cache")
-        self.session_id = self._create_id()
+        self.session_id = existing_id or self._create_id()
+        data = self._get_new_data()
+        self.is_new = True
+        self._data_cache = data
+
+    def _get_new_data(self):
         data = {}
         now = time.time()
         data['_access'] = now
         data['_creation'] = now
-        self.is_new = True
-        self._data_cache = data
+        return data
 
     def _create_id(self):
         """
@@ -199,11 +233,11 @@ class BaseSession(object):
 
     @property
     def session_id(self):
-        try:
-            val = self._cookie[self.name].value
+        val = self._get_session_id_from_cookie()
+        if val is not None:
             log.debug("Current session id is '%s'" % val)
             return val
-        except KeyError:
+        else:
             # There is none yet, create a new one then try again
             log.debug("Creating a new session because none exists yet")
             self._new_data_cache()
@@ -212,6 +246,13 @@ class BaseSession(object):
     @session_id.setter
     def session_id(self, value):
         log.debug("Setting new session id to %s" % value)
+        self._set_session_id_to_cookie(value)
+
+    def _get_session_id_from_cookie(self):
+        session = self._cookie.get(self.name)
+        return session.value if session else None
+
+    def _set_session_id_to_cookie(self, value):
         self._cookie[self.name] = value
 
     @property
@@ -318,8 +359,13 @@ class BaseSession(object):
 
     def invalidate(self, session_id=None):
         """
-        Delete current session and create a new session without retaining the
-        data.
+        Delete either the given session or the current one with out retaining
+        the data.
+
+        :param unicode session_id: If specified does not invalidate the current
+                                   session but instead the one with the
+                                   specified ID.
+
         """
         if session_id is None:
             session_id = self.session_id
@@ -330,28 +376,39 @@ class BaseSession(object):
     def cookie(self):
         """
         Return a cookie object (instance of a subclass of
-        :class:`Cookie.BaseCookie` to be converted to a string and inserted
-        directly into an HTTP response header, for example:
+        :class:`Cookie.BaseCookie`) like this:
 
-        .. code-block: pycon
+        .. code-block:: pycon
 
             >>> print session.cookie
+            <SignedCookie: session=u'ca6fd7...'>
+            >>> print str(cookie)
+            'Set-Cookie: session=Yjc0Y...YyIg==; Domain=example.com; Path=/'
 
-        .. todo::
-            Make a sensible output of the above codeblock
+        The returned class can be used to access individual values and
+        possibly change or verify some data. Afterwards cast it to a string
+        and it will represent a line that can be added to the HTTP response
+        header.
 
-        Of course, the actual implementation highly depends on the framework
-        used.
+        .. note::
+
+            Most likely you will want to use this in conjunction with
+            :meth:`BaseSession.save` will already returns the exact same
+            cookie.
         """
         if not self._saved:
             raise ValueError("Session has to be saved before retrieving "
                              "cookie.")
+        if self.name not in self._cookie:
+            self.session_id
         self._update_cookie()
         return self._cookie
 
     def load(self):
         """
         Load the session data and also make sure the data is not expired.
+
+        :rtype: dict
         """
         # First load data
         data = self._load_data()
@@ -392,6 +449,8 @@ class BaseSession(object):
 
         This cookie can later also be accessed under the ``cookie`` parameter
         of this session, however may not be accessed beforehand!
+
+        :rtype: ``SignedCookie`` or ``EncryptedCookie``
         """
         if self.accessed:
             self._data["_access"] = time.time()
@@ -425,7 +484,9 @@ class BaseSession(object):
 
     def exists(self, session_id):
         """
-        Check whether a given ``session_id`` exists or not.
+        Check whether a given session ID exists or not.
+
+        :param unicode session_id: The session ID to check.
         """
         raise NotImplementedError
 
@@ -444,10 +505,16 @@ class BaseSession(object):
 
 class DogpileSession(BaseSession):
     """
-    A session based on :mod:`dogpile.cache`. The only additional configuration
-    parameter is :param region: which should be a configured instance of
-    :meth:`dogpile.cache.make_region`. For all other parameters look at the
-    documentation for :class:`BaseSession`.
+    A session based on `dogpile.cache`_.  It has one additional configuration
+    parameter:
+
+    :param region: A configured instance of
+                   :func:`dogpile.cache.region.make_region`
+
+    For all other parameters look at the documentation for
+    :class:`BaseSession`.
+
+    .. _dogpile.cache: https://dogpilecache.readthedocs.org/en/latest/
 
     .. note::
         This type of session currently does not support the
@@ -493,19 +560,35 @@ class DogpileSession(BaseSession):
 
 class CookieSession(BaseSession):
     def _save_data(self):
-        self._cookie[self.name]["data"] = self._data_cache.copy()
+        self._cookie[self.name] = (self.session_id, self._data.copy())
 
     def _delete_data(self, session_id):
-        del self._cookie[self.name]["data"]
+        if session_id and self.session_id != session_id:
+            raise ValueError("Cannot delete foreign sessions.")
+        self._cookie[self.name] = (self.session_id, self._get_new_data())
 
     def _load_data(self):
-        return self._cookie[self.name]["data"]
+        return self._cookie[self.name].value[1]
 
     def exists(self, session_id):
-        # Not possible for cookies, but also not required
+        """
+        This is not possible for cookies. Thus if you depend on it somehow,
+        this might be the wrong backend.
+        """
         pass
 
     @classmethod
     def cleanup(cls):
         # Not necessary for cookies
         pass
+
+    def _get_session_id_from_cookie(self):
+        session = self._cookie.get(self.name)
+        return session.value[0] if session else None
+
+    def _set_session_id_to_cookie(self, value):
+        if self.name in self._cookie and self._cookie[self.name].value:
+            olddata = self._cookie[self.name].value[1]
+        else:
+            olddata = self._get_new_data()
+        self._cookie[self.name] = (value, olddata)

@@ -14,8 +14,14 @@ import pysess
 import pytest
 
 
-@pytest.fixture(params=["dogpile", ])
+log = logging.getLogger(__name__)
+
+
+@pytest.fixture(params=['dogpile', 'cookie'])
 def sessionmaker(request, cache_dict):
+    """Return a new session factory, one for each tested backend. It will be
+    already configured, so if re-configuration is desired, one should reset
+    the configuration."""
     backend = request.param
     settings = {'backend': backend,
                 'domain': 'example.com',
@@ -30,7 +36,8 @@ def sessionmaker(request, cache_dict):
                                          arguments={'cache_dict': cache_dict})
         settings["region"] = region
     elif backend == 'cookie':
-        raise NotImplementedError
+        # No extra settings needed
+        pass
 
     Session = pysess.sessionmaker()
     Session.configure(**settings)
@@ -39,11 +46,13 @@ def sessionmaker(request, cache_dict):
 
 @pytest.fixture
 def cache_dict():
+    """Just a dict to be used as cache."""
     return {}
 
 
 @pytest.fixture
 def existing_session(sessionmaker):
+    """Create a session, save a value to it and load it again."""
     sess = sessionmaker()
     sess["test"] = "testval"
     cookie = sess.save()
@@ -52,6 +61,8 @@ def existing_session(sessionmaker):
 
 @pytest.fixture
 def filename(request, tmpdir):
+    """Create a temporary file in a uniqe testing directory and delete it
+    after the test."""
     filename = tmpdir.join('file')
     assert not os.path.exists(filename.strpath)
 

@@ -28,6 +28,7 @@ class SignedCookie(Cookie.BaseCookie):
 
     def value_encode(self, val):
         orig_val = val
+        log.debug("Value to encode: %s" % str(val))
         val = self.serializer.dumps(val)
         sig = authenticate_data(val, self.sig_key, self.hashalg)
         return orig_val, base64.b64encode(b"{0}{1}".format(sig, val))

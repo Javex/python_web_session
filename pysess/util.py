@@ -60,11 +60,19 @@ def get_secret_keys(path, ignore_permissions=False):
     Return the secret keys for encryption and authentication as a dictonary
     with the keys being ``encryption_key`` and ``signature_key``. Can only be
     used after it has been created. Use :func:`get_or_create_secret_keys` for
-    transparent usage.
+    transparent usage. The keys will be returned as **byte** strings as
+    required by the used cryptographic functions.
 
     Note, that this function also performs a check on the permissions of path
     so that they are only readable and writable by the owner of the
     application.
+
+    :param unicode path: The path to the secret file.
+
+    :param bool ignore_permissions: If it should be ignored (i.e. not checked)
+                                    if the permissions on the secret file are
+                                    insecure. Default: ``False``, meaning it
+                                    will be checked.
     """
     if (not ignore_permissions and
             not permissions_okay(path, [stat.S_IRUSR, stat.S_IWUSR])):
@@ -73,6 +81,8 @@ def get_secret_keys(path, ignore_permissions=False):
                          "before proceeding!")
     with open(path) as secfile:
         data = json.loads(secfile.read(), encoding='iso-8859-1')
+    data["signature_key"] = data["signature_key"].encode('iso-8859-1')
+    data["encryption_key"] = data["encryption_key"].encode('iso-8859-1')
     return data
 
 

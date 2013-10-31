@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, absolute_import
-from pysess.session.backends import BaseSession
-import pytest
+from pysess import crypto
 from pysess.conf import HASHALG
-import json
+from pysess.crypto import authenticate_data, decrypt_authenticated
+from pysess.session.backends import BaseSession
 from pysess.session.cookies import SignedCookie
-import logging
-import pickle
+from tests.test_crypto import test_enc_key, test_sig_key
 import base64
 import hashlib
-from tests.test_crypto import test_enc_key
+import json
+import logging
+import pickle
+import pytest
+from pysess.exc import CryptoError
 
 
 log = logging.getLogger(__name__)
@@ -18,17 +21,13 @@ log = logging.getLogger(__name__)
 """
 Tests to create:
 
-- encryption
-- different hashalg
-- secret file instead of static keys
-- Just work with the session without any noticing
 - Invalid signatures & encryption lead to fails & logging
-- Unavailable encryption raises Error if key is given
-- Encryption Module available & unavailable
 - Implement and test some kind of concurrency mechanism: We need to have a
   strategy for when a session is accessed from multiple locations (locking?)
   see https://github.com/Javex/python_web_session/wiki/Race-Conditions for
   details.
+- Integration tests (webtest)
+- Maybe even selenium?
 
 """
 
@@ -69,7 +68,6 @@ def test_session_custom_params(sessionmaker):
     assert session.secure
     assert session.httponly
     assert session.max_age == 30
-
     cookie = session.save()
     assert cookie['testsession']['path'] == '/foo'
     assert cookie['testsession']['max-age'] == 30
@@ -93,6 +91,45 @@ def test_session_custom_crypto(sessionmaker):
 
     session2 = sessionmaker(cookie)
     assert session2["kéy"] == "valué"
+
+
+def test_session_enc_raise(sessionmaker):
+    session = sessionmaker()
+    cookie = str(session.save())
+    sessionmaker.settings["encryption_key"] = test_enc_key
+    crypto.conf["encryption_available"] = False
+    with pytest.raises(CryptoError):
+        sessionmaker()
+    with pytest.raises(CryptoError):
+        sessionmaker(cookie)
+    crypto.conf["encryption_available"] = True
+
+
+def test_session_no_enc_no_raise(sessionmaker):
+    session = sessionmaker()
+    cookie = str(session.save())
+    crypto.conf["encryption_available"] = False
+    # Don't raise, as we don't want encryption
+    sessionmaker()
+    sessionmaker(cookie)
+    crypto.conf["encryption_available"] = True
+
+
+def test_session_enc(sessionmaker):
+    sessionmaker.settings["encryption_key"] = test_enc_key
+    session = sessionmaker()
+    session_id = ("a94d3fc0fd42e0f4d860b714b7ca4b2f"
+                  "675c5164bfaa50dc1c6ce949b52699dd")
+    session.session_id = session_id
+    cookie = session.save()
+    data = base64.b64decode(str(cookie).split(";")[0][20:])
+    tag, ciphertext = data[:64], data[64:]
+    plain = decrypt_authenticated(ciphertext, tag, test_enc_key, test_sig_key,
+                                  hashlib.sha256)
+    plain = json.loads(plain)
+    if sessionmaker.settings["backend"] == "cookie":
+        plain = plain[0]
+    assert plain == session_id
 
 
 def test_session_new(sessionmaker, cache_dict):
@@ -120,6 +157,16 @@ def test_session_new(sessionmaker, cache_dict):
     log.debug("Current cache: %s" % cache_dict)
     log.debug("Testing value")
     assert new_session["testkey"] == "testval"
+
+
+def test_session_empty(sessionmaker):
+    session = sessionmaker()
+    cookie = session.save()
+    session_id = session._get_session_id_from_cookie()
+
+    # Load it back
+    session_old = sessionmaker(str(cookie))
+    assert session_old.session_id == session_id
 
 
 def test_session_existing(sessionmaker, existing_session):
@@ -203,7 +250,7 @@ def test_session_clear(sessionmaker):
     session["kéy"] = "valué"
     cookie = session.save()
 
-    session2 = sessionmaker(cookie)
+    session2 = sessionmaker(str(cookie))
     assert not session2.accessed
     assert session["kéy"] == "valué"
     assert not session2.modified
@@ -215,6 +262,20 @@ def test_session_clear(sessionmaker):
     assert session2["_creation"] > old_creation
     assert session2["_access"] > old_access
     assert len(session2) == 0
+
+
+def test_session_cookie_no_str(sessionmaker):
+    session = sessionmaker()
+    cookie = session.save()
+    session_id = session.session_id
+
+    with pytest.raises(ValueError):
+        sessionmaker(cookie)
+
+    with pytest.raises(ValueError):
+        sessionmaker(unicode(cookie))
+
+    assert sessionmaker(str(cookie)).session_id == session_id
 
 
 def test_session_create_id(sessionmaker):
@@ -237,6 +298,9 @@ def test_session(sessionmaker):
 
 
 def test_session_delete_other(sessionmaker):
+    # Cookie not capable of deleting other data
+    if sessionmaker.settings["backend"] == "cookie":
+        return
     sess1 = sessionmaker()
     sess1["key"] = "value1"
     sess1_id = sess1.session_id
@@ -288,3 +352,20 @@ def test_base_class_unimplemented():
                 func(None)
             else:
                 func()
+
+
+def test_different_hashalg(sessionmaker):
+    settings = sessionmaker.settings
+    delattr(sessionmaker, "settings")
+    settings["hashalg"] = hashlib.md5
+    sessionmaker.configure(**settings)
+    session = sessionmaker()
+    cookie = session.save()
+    session_id = session._get_session_id_from_cookie()
+    val = base64.b64decode(str(cookie).split(";")[0][20:])
+    sig, data = val[:32], val[32:]
+    sig_key = session.sig_key
+    assert authenticate_data(data, sig_key, hashlib.md5) == sig
+
+    old_session = sessionmaker(str(cookie))
+    assert old_session.session_id == session_id

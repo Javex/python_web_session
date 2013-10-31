@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, absolute_import
-import pytest
+from pysess import crypto
+from pysess.crypto import (encrypt_then_authenticate, decrypt_authenticated,
+    get_hash_length, authenticate_data, verify_data, encryption_available)
 import hashlib
-from pysess.crypto import encrypt_then_authenticate, decrypt_authenticated, \
-    get_hash_length, authenticate_data, verify_data, encryption_available
 import hmac
+import pytest
 
 test_enc_key = b'0' * 32
 test_sig_key = b'1' * 32
 
 
-@pytest.fixture(params=['test', 'tést'])
+@pytest.fixture(params=['test', 'tést', b'test', b't\xc3\xa9st'])
 def authenced(request):
+    """Encrypt and authenticate a testvalue and return a three-tuple
+    (testval, ciphertext, tag)."""
     if not encryption_available():
         pytest.skip("pycrypto not available")
     testval = request.param
@@ -20,17 +23,20 @@ def authenced(request):
     return testval, ciphertext, tag
 
 
-@pytest.fixture
-def authed():
-    return authenticate_data('test', test_sig_key, hashlib.sha256)
+@pytest.fixture(params=['test', 'tést', b'test', b't\xc3\xa9st'])
+def authed(request):
+    """Authenticate a test value and return the pair (testval, signature)."""
+    testval = request.param
+    return testval, authenticate_data(testval, test_sig_key, hashlib.sha256)
 
 
-@pytest.mark.skipf(not encryption_available(), reason="pycrypto not available")
 def test_encryption(authenced):
     testval, ciphertext, tag = authenced
     plain = decrypt_authenticated(ciphertext, tag, test_enc_key, test_sig_key,
                                   hashlib.sha256)
     assert isinstance(plain, unicode)
+    if isinstance(testval, str):
+        testval = testval.decode('utf-8')
     assert plain == testval
 
 
@@ -72,7 +78,7 @@ def test_encryption_wrong_hashalg(authenced):
                               test_sig_key, hashlib.md5)
 
 
-@pytest.mark.skipif(not encryption_available(),
+@pytest.mark.skipif("not encryption_available()",
                     reason="pycrypto not available")
 def test_encryption_key_type_check():
     with pytest.raises(TypeError):
@@ -91,24 +97,51 @@ def test_get_hash_length():
 
 
 def test_authentication(authed):
-    assert verify_data('test', authed, test_sig_key, hashlib.sha256)
+    val, sig = authed
+    assert verify_data(val, sig, test_sig_key, hashlib.sha256)
 
 
 def test_authentication_bad_tag(authed):
+    val, _ = authed
     with pytest.raises(ValueError):
-        verify_data('test', '0' * 32, test_sig_key, hashlib.sha256)
+        verify_data(val, '0' * 32, test_sig_key, hashlib.sha256)
 
 
 def test_authentication_wrong_hashalg(authed):
+    val, sig = authed
     with pytest.raises(ValueError):
-        verify_data('test', authed, test_sig_key, hashlib.md5)
+        verify_data(val, sig, test_sig_key, hashlib.md5)
 
 
 def test_authentication_bad_key(authed):
+    val, sig = authed
     with pytest.raises(ValueError):
-        verify_data('test', authed, b'0' + test_sig_key[1:], hashlib.sha256)
+        verify_data(val, sig, b'0' + test_sig_key[1:], hashlib.sha256)
 
 
 def test_authentication_key_type_check():
     with pytest.raises(TypeError):
         authenticate_data("", unicode("0"), hashlib.sha256)
+
+
+@pytest.mark.skipif("not encryption_available()",
+                    reason="pycrypto not available")
+def test_encryption_available():
+    assert encryption_available()
+
+
+def test_encryption_available_fails():
+    oldval = crypto.conf["encryption_available"]
+    crypto.conf["encryption_available"] = False
+    assert not encryption_available()
+    crypto.conf["encryption_available"] = oldval
+
+
+@pytest.mark.skipif("not encryption_available()",
+                    reason="pycrypto not available")
+def test_encryption_available_recheck():
+    assert encryption_available()
+    del crypto.conf["encryption_available"]
+    with pytest.raises(KeyError):
+        assert not encryption_available()
+    assert encryption_available(recheck=True)

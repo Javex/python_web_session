@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, absolute_import
+import base64
 import logging
 
 
@@ -53,12 +54,21 @@ def test_static_expiry(sessionmaker):
 
 
 def test_no_expiry(sessionmaker):
+    log.debug("Testing backend %s" % sessionmaker.settings["backend"])
     session = sessionmaker()
+    log.debug("1")
     session["_creation"] = 0
+    log.debug("2: %s" % session._data)
     session["_access"] = 0
+    log.debug("3: %s" % session._data)
     session._save_data()
+    log.debug("4: %s" % session._data)
     session._saved = True
-    cookie = str(session.cookie)
+    log.debug("5: %s" % session._data)
+    cookie = session.cookie
+    log.debug("Cookie: %r" % cookie)
+    cookie = str(cookie)
+    log.debug("Data: %r" % base64.b64decode(cookie))
 
     session2 = sessionmaker(cookie)
     session2.load()
