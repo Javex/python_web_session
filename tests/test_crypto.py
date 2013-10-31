@@ -3,7 +3,7 @@ from __future__ import unicode_literals, absolute_import
 import pytest
 import hashlib
 from pysess.crypto import encrypt_then_authenticate, decrypt_authenticated, \
-    get_hash_length, authenticate_data, verify_data
+    get_hash_length, authenticate_data, verify_data, encryption_available
 import hmac
 
 test_enc_key = b'0' * 32
@@ -12,6 +12,8 @@ test_sig_key = b'1' * 32
 
 @pytest.fixture(params=['test', 'tést'])
 def authenced(request):
+    if not encryption_available():
+        pytest.skip("pycrypto not available")
     testval = request.param
     ciphertext, tag = encrypt_then_authenticate(testval, test_enc_key,
                                                 test_sig_key, hashlib.sha256)
@@ -23,6 +25,7 @@ def authed():
     return authenticate_data('test', test_sig_key, hashlib.sha256)
 
 
+@pytest.mark.skipf(not encryption_available(), reason="pycrypto not available")
 def test_encryption(authenced):
     testval, ciphertext, tag = authenced
     plain = decrypt_authenticated(ciphertext, tag, test_enc_key, test_sig_key,
@@ -69,6 +72,8 @@ def test_encryption_wrong_hashalg(authenced):
                               test_sig_key, hashlib.md5)
 
 
+@pytest.mark.skipif(not encryption_available(),
+                    reason="pycrypto not available")
 def test_encryption_key_type_check():
     with pytest.raises(TypeError):
         encrypt_then_authenticate("", unicode(test_enc_key), test_sig_key,

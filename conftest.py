@@ -9,9 +9,6 @@ conf = os.path.join(ROOT_PATH, 'pytest.ini')
 here = os.path.dirname(conf)
 defaults = {'__file__': conf, 'here': here}
 logging.config.fileConfig(conf, defaults)
-
-
-from dogpile.cache import make_region
 from tests.test_crypto import test_sig_key
 import pysess
 import pytest
@@ -25,6 +22,10 @@ def sessionmaker(request, cache_dict):
                 'signature_key': test_sig_key,
                }
     if backend == 'dogpile':
+        try:
+            from dogpile.cache import make_region
+        except ImportError:
+            pytest.skip("dogpile.cache not available")
         region = make_region().configure('dogpile.cache.memory',
                                          arguments={'cache_dict': cache_dict})
         settings["region"] = region

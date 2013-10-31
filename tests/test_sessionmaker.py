@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, absolute_import
-from dogpile.cache.region import make_region
 from pysess import sessionmaker, crypto
 from pysess.exc import SessionConfigurationError, CryptoError
 from pysess.session.backends import DogpileSession
@@ -24,6 +23,10 @@ def test_session_unknown_backend(filename):
 
 
 def test_sessionmaker_new_conf(cache_dict):
+    try:
+        from dogpile.cache.region import make_region
+    except ImportError:
+        pytest.skip("dogpile.cache not available")
     region = make_region().configure('dogpile.cache.memory',
                             arguments={'cache_dict': cache_dict})
     settings = {'backend': 'dogpile',
