@@ -26,11 +26,9 @@ def verify_data(data, signature, sig_key, hashalg):
         ``sig_key`` must be a byte string of a sufficient length (recommended
         is ``32`` bytes).
     """
-    if isinstance(data, unicode):
-        data = data.encode('utf-8')
     reference = authenticate_data(data, sig_key, hashalg)
     if not compare_constant_time(reference, signature):
-        raise ValueError("Invalid Signature")
+        raise CryptoError("Invalid Signature")
     else:
         return True
 
@@ -89,7 +87,7 @@ def encrypt_then_authenticate(data, enc_key, hmac_key, hashalg):
     """
     from Crypto.Cipher import AES
     if not encryption_available():
-        raise CryptoError("pycrypto is not available.")
+        raise ImportError("pycrypto is not available.")
     from Crypto.Util import Counter
     if isinstance(data, unicode):
         data = data.encode('utf-8')
@@ -135,13 +133,16 @@ def decrypt_authenticated(ciphertext, tag, enc_key, hmac_key, hashalg):
     """
     from Crypto.Cipher import AES
     from Crypto.Util import Counter
+    if not isinstance(ciphertext, str):
+        raise TypeError("Ciphertext is not a byte string.")
     reference_tag = hmac.new(hmac_key, ciphertext, hashalg).hexdigest()
     if not compare_constant_time(reference_tag, tag):
-        raise ValueError("Signature does not match, invalid ciphertext")
+        raise CryptoError("Signature does not match, invalid ciphertext")
 
     cipher = AES.new(enc_key, AES.MODE_CTR, counter=Counter.new(128))
     plaintext = cipher.decrypt(ciphertext)
     try:
         return plaintext.decode("utf-8")
     except UnicodeDecodeError:
-        raise ValueError("Could not retrieve plaintext back properly")
+        raise CryptoError("Could not retrieve plaintext back properly "
+                          "(wrong key or ciphertext?)")

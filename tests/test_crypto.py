@@ -6,6 +6,7 @@ from pysess.crypto import (encrypt_then_authenticate, decrypt_authenticated,
 import hashlib
 import hmac
 import pytest
+from pysess.exc import CryptoError
 
 test_enc_key = b'0' * 32
 test_sig_key = b'1' * 32
@@ -42,38 +43,38 @@ def test_encryption(authenced):
 
 def test_encryption_wrong_tag(authenced):
     __, ciphertext, __ = authenced
-    with pytest.raises(ValueError):
+    with pytest.raises(CryptoError):
         decrypt_authenticated(ciphertext, '0', test_enc_key, test_sig_key,
                               hashlib.sha256)
 
 
 def test_encryption_bad_ciphertext(authenced):
     __, ciphertext, __ = authenced
-    new_ciphertext = 'é' * len(ciphertext)
-    new_tag = hmac.new(test_sig_key, new_ciphertext.encode('utf-8'),
+    new_ciphertext = ('é' * len(ciphertext)).encode('utf-8')
+    new_tag = hmac.new(test_sig_key, new_ciphertext,
                        hashlib.sha256).hexdigest()
-    with pytest.raises(ValueError):
+    with pytest.raises(CryptoError):
         decrypt_authenticated(new_ciphertext, new_tag, test_enc_key,
                               test_sig_key, hashlib.sha256)
 
 
 def test_encryption_bad_enc_key(authenced):
     __, ciphertext, tag = authenced
-    with pytest.raises(ValueError):
+    with pytest.raises(CryptoError):
         decrypt_authenticated(ciphertext, tag, b'1' + test_enc_key[1:],
                               test_sig_key, hashlib.sha256)
 
 
 def test_encryption_bad_sig_key(authenced):
     __, ciphertext, tag = authenced
-    with pytest.raises(ValueError):
+    with pytest.raises(CryptoError):
         decrypt_authenticated(ciphertext, tag, test_enc_key, b'hmac_key',
                               hashlib.sha256)
 
 
 def test_encryption_wrong_hashalg(authenced):
     __, ciphertext, tag = authenced
-    with pytest.raises(ValueError):
+    with pytest.raises(CryptoError):
         decrypt_authenticated(ciphertext, tag, test_enc_key,
                               test_sig_key, hashlib.md5)
 
@@ -103,19 +104,19 @@ def test_authentication(authed):
 
 def test_authentication_bad_tag(authed):
     val, _ = authed
-    with pytest.raises(ValueError):
+    with pytest.raises(CryptoError):
         verify_data(val, '0' * 32, test_sig_key, hashlib.sha256)
 
 
 def test_authentication_wrong_hashalg(authed):
     val, sig = authed
-    with pytest.raises(ValueError):
+    with pytest.raises(CryptoError):
         verify_data(val, sig, test_sig_key, hashlib.md5)
 
 
 def test_authentication_bad_key(authed):
     val, sig = authed
-    with pytest.raises(ValueError):
+    with pytest.raises(CryptoError):
         verify_data(val, sig, b'0' + test_sig_key[1:], hashlib.sha256)
 
 
