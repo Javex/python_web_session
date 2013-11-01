@@ -108,8 +108,7 @@ class BaseSession(object):
 
     def __init__(self, cookie=None, **settings):
         if (cookie is not None and not isinstance(cookie, str)):
-            raise ValueError("Cookie must be str or unicode, cast it "
-                             "explicitly")
+            raise ValueError("Cookie must be str, cast it explicitly")
         self.modified = False
         self.accessed = False
         self.is_new = False
