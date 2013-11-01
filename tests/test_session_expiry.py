@@ -24,21 +24,6 @@ def test_refresh_on_access(sessionmaker):
     assert old_data != new_session._data
 
 
-def test_no_access_no_refresh(sessionmaker):
-    sessionmaker.settings["max_age"] = 10
-
-    # First create a regular session with access
-    session = sessionmaker()
-    session["test"] = "val"
-    cookie = str(session.save())
-    old_access = session["_access"]
-
-    # Now make a session with no access
-    session2 = sessionmaker(cookie)
-    cookie = str(session2.save())
-    assert old_access == session2["_access"]
-
-
 def test_static_expiry(sessionmaker):
     sessionmaker.settings["refresh_on_access"] = False
     sessionmaker.settings["max_age"] = 10
@@ -54,21 +39,13 @@ def test_static_expiry(sessionmaker):
 
 
 def test_no_expiry(sessionmaker):
-    log.debug("Testing backend %s" % sessionmaker.settings["backend"])
     session = sessionmaker()
-    log.debug("1")
     session["_creation"] = 0
-    log.debug("2: %s" % session._data)
     session["_access"] = 0
-    log.debug("3: %s" % session._data)
     session._save_data()
-    log.debug("4: %s" % session._data)
     session._saved = True
-    log.debug("5: %s" % session._data)
     cookie = session.cookie
-    log.debug("Cookie: %r" % cookie)
     cookie = str(cookie)
-    log.debug("Data: %r" % base64.b64decode(cookie))
 
     session2 = sessionmaker(cookie)
     session2.load()

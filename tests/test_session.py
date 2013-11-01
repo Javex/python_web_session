@@ -15,6 +15,7 @@ import json
 import logging
 import pickle
 import pytest
+import time
 
 
 log = logging.getLogger(__name__)
@@ -181,45 +182,40 @@ def test_session_enc(sessionmaker):
 
 def test_session_new(sessionmaker, cache_dict):
     session = sessionmaker()
-    log.debug("Current cache: %s" % cache_dict)
     assert session.is_new
     assert not session.modified
-    assert not session.accessed
     assert session._data_cache is None
     assert session.created
-    log.debug("Current cache: %s" % cache_dict)
 
     session["testkey"] = "testval"
     assert session._data_cache
     assert session["testkey"] == "testval"
-    log.debug("Current cache: %s" % cache_dict)
 
     assert session.session_id
     cookie = session.save()
-    log.debug("Current cache: %s" % cache_dict)
 
-    log.debug("Creating new session from cookie %s" % cookie)
-    log.debug("Current cache: %s" % cache_dict)
     new_session = sessionmaker(str(cookie))
-    log.debug("Current cache: %s" % cache_dict)
-    log.debug("Testing value")
     assert new_session["testkey"] == "testval"
 
 
 def test_session_empty(sessionmaker):
     session = sessionmaker()
     cookie = session.save()
+    created_before = time.time()
     session_id = session._get_session_id_from_cookie()
 
     # Load it back
     session_old = sessionmaker(str(cookie))
     assert session_old.session_id == session_id
+    sess_data = session_old._load_data()
+    assert "_access" in sess_data
+    assert "_creation" in sess_data
+    assert sess_data["_creation"] < created_before
 
 
 def test_session_existing(sessionmaker, existing_session):
     session = existing_session
     assert not session.is_new
-    assert not session.accessed
     assert not session.modified
 
 
@@ -303,11 +299,8 @@ def test_session_clear(sessionmaker):
     cookie = session.save()
 
     session2 = sessionmaker(str(cookie))
-    assert not session2.accessed
     assert session["kéy"] == "valué"
     assert not session2.modified
-    session2.accessed = False
-    assert not session2.accessed
     old_creation = session2["_creation"]
     old_access = session2["_access"]
     session2.clear()
@@ -344,7 +337,6 @@ def test_session(sessionmaker):
 
     session2 = sessionmaker(str(cookie))
     assert not session2.is_new
-    log.debug("Data: %s" % session2._data)
     assert session2["kéy"] == "valué"
     assert session2.created == old_creation
 

@@ -110,7 +110,6 @@ class BaseSession(object):
         if (cookie is not None and not isinstance(cookie, str)):
             raise ValueError("Cookie must be str, cast it explicitly")
         self.modified = False
-        self.accessed = False
         self.is_new = False
         self.has_encryption = False
         self._saved = False
@@ -184,7 +183,6 @@ class BaseSession(object):
 
     @property
     def _data(self):
-        self.accessed = True
         if self._data_cache is None:
             if self.session_id is None or self.is_new:
                 log.debug("Creating a new cache due to session id being %s "
@@ -229,10 +227,8 @@ class BaseSession(object):
         cookie["domain"] = self.domain
         if self.max_age:
             cookie["max-age"] = self.max_age
-            # Only set expires if we have data to read "_access" from
-            if self.accessed or self.is_new:
-                fromtime = self._data["_access"]
-                cookie["expires"] = max_age_to_expires(self.max_age, fromtime)
+            fromtime = self._data["_access"]
+            cookie["expires"] = max_age_to_expires(self.max_age, fromtime)
         if self.secure:
             cookie["secure"] = self.secure
         if self.httponly:
@@ -304,7 +300,6 @@ class BaseSession(object):
 
     def clear(self):
         self.modified = True
-        self.accessed = True
         self._new_data_cache()
 
     def get(self, key, default=None):
@@ -459,9 +454,8 @@ class BaseSession(object):
 
         :rtype: ``SignedCookie`` or ``EncryptedCookie``
         """
-        if self.accessed:
-            self._data["_access"] = time.time()
-            self._save_data()
+        self._data["_access"] = time.time()
+        self._save_data()
         self._saved = True
         return self.cookie
 
