@@ -10,8 +10,10 @@ here = os.path.dirname(conf)
 defaults = {'__file__': conf, 'here': here}
 logging.config.fileConfig(conf, defaults)
 from tests.test_crypto import test_sig_key
+import Queue
 import pysess
 import pytest
+import sys
 
 
 log = logging.getLogger(__name__)
@@ -71,3 +73,55 @@ def filename(request, tmpdir):
         assert not os.path.exists(filename.strpath)
     request.addfinalizer(remove)
     return filename.strpath
+
+
+@pytest.fixture
+def threadmon(request):
+    mon = ThreadMonitor()
+    request.addfinalizer(mon.check)
+    return mon
+
+
+class ThreadMonitor(object):
+    """Helper class for catching exceptions generated in threads.
+
+       Usage:
+
+          mon = ThreadMonitor()
+
+          th = threading.Thread(target=mon.wrap(myFunction))
+          th.start()
+
+          th.join()
+
+          mon.check() # raises any exception generated in the thread
+
+       Any raised exception will include a traceback from the original
+       thread, not the function calling mon.check()
+
+       Works for multiple threads
+    """
+    def __init__(self):
+        self.queue = Queue.Queue()
+
+    def wrap(self, function):
+        def threadMonitorWrapper(*args, **kw):
+            try:
+                ret = function(*args, **kw)
+            except Exception as e:
+                self.queue.put(sys.exc_info())
+                raise
+
+            return ret
+
+        return threadMonitorWrapper
+
+    def check(self):
+        try:
+            item = self.queue.get(block=False)
+        except Queue.Empty:
+            return
+
+        class_, value, tb = item
+
+        raise class_, value, tb  # note the last parameter - traceback

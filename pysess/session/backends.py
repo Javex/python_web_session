@@ -110,9 +110,11 @@ class BaseSession(object):
         if (cookie is not None and not isinstance(cookie, str)):
             raise ValueError("Cookie must be str, cast it explicitly")
         self.modified = False
+        self.locked = False
         self.is_new = False
         self.has_encryption = False
         self._saved = False
+        self._aborted = False
         self._data_cache = None
         log.debug("Recieved cookie '%s'" % cookie)
         self._id_length = settings.get('session_id_length', 32)
@@ -398,7 +400,7 @@ class BaseSession(object):
             :meth:`BaseSession.save` will already returns the exact same
             cookie.
         """
-        if not self._saved:
+        if not (self._saved or self._aborted):
             raise ValueError("Session has to be saved before retrieving "
                              "cookie.")
         if self.name not in self._cookie:
@@ -413,8 +415,9 @@ class BaseSession(object):
         :rtype: dict
         """
         # First load data
+        self.locked = self._acquire()
         data = self._load_data()
-        log.debug("Loaded data %s" % data)
+        log.debug("Loaded data %s with id %s" % (data, id(data)))
 
         # Check if the data is expired
         expired = False
@@ -436,6 +439,7 @@ class BaseSession(object):
 
         # Is there a reason to start over?
         if expired or data is None:
+            log.debug("Session expired, creating new")
             self.invalidate()
         else:
             self._data_cache = data
@@ -455,8 +459,24 @@ class BaseSession(object):
         :rtype: ``SignedCookie`` or ``EncryptedCookie``
         """
         self._data["_access"] = time.time()
+        log.debug("Saving data %s with id %s" % (self._data, id(self._data)))
         self._save_data()
+        if self.locked:
+            self._release()
         self._saved = True
+        cookie = self.cookie
+        self._data_cache = None
+        self.is_new = False
+        return cookie
+
+    def abort(self):
+        """
+        Instead of saving the data, abort the current session and don't save
+        any changes.
+        """
+        if self.locked:
+            self._release()
+        self._aborted = True
         return self.cookie
 
     # Interface functions to be implemented by subclasses
@@ -488,6 +508,23 @@ class BaseSession(object):
         Check whether a given session ID exists or not.
 
         :param unicode session_id: The session ID to check.
+        """
+        raise NotImplementedError
+
+    def _acquire(self, blocking=True):
+        """
+        Acquire a lock to avoid concurrency problems. The implementation of
+        this depends entirely on the used backend (see :cls:`DogpileSession`
+        for an example). Some backends might not even need it (e.g.
+        :cls:`CookieSession`).The lock should behave like a
+        :cls:`threading.Lock`.
+        """
+        raise NotImplementedError
+
+    def _release(self):
+        """
+        Release the aqcuired lock. For details see
+        :meth:`BaseSession._acquire`.
         """
         raise NotImplementedError
 
@@ -530,6 +567,13 @@ class DogpileSession(BaseSession):
                   % (args, settings))
         self.region = settings['region']
         BaseSession.__init__(self, *args, **settings)
+        self.lock = self.region._mutex(self._data_key())
+
+    def _acquire(self, blocking=True):
+        return self.lock.acquire(wait=blocking)
+
+    def _release(self):
+        return self.lock.release()
 
     def _imports(self):
         from dogpile import cache
@@ -538,8 +582,7 @@ class DogpileSession(BaseSession):
     def _data_key(self, session_id=None):
         if session_id is None:
             session_id = self.session_id
-        k = "session_%s" % session_id
-        return k
+        return "session_%s" % session_id
 
     def _save_data(self):
         self.region.set(self._data_key(), self._data)
@@ -551,7 +594,7 @@ class DogpileSession(BaseSession):
         log.debug("Loading data with key %s" % self._data_key())
         data = self.region.get(self._data_key())
         log.debug("Recieved data %s" % data)
-        return data or None
+        return data.copy() if data else None
 
     def exists(self, session_id):
         # We can only retrieve not check so this is a little expensive
@@ -581,6 +624,12 @@ class CookieSession(BaseSession):
     @classmethod
     def cleanup(cls):
         # Not necessary for cookies
+        pass
+
+    def _acquire(self, blocking=True):
+        pass
+
+    def _release(self):
         pass
 
     def _get_session_id_from_cookie(self):

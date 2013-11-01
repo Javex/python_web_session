@@ -299,7 +299,8 @@ def test_session_clear(sessionmaker):
     cookie = session.save()
 
     session2 = sessionmaker(str(cookie))
-    assert session["kéy"] == "valué"
+    assert not session2.is_new
+    assert session2["kéy"] == "valué"
     assert not session2.modified
     old_creation = session2["_creation"]
     old_access = session2["_access"]
@@ -307,6 +308,14 @@ def test_session_clear(sessionmaker):
     assert session2["_creation"] > old_creation
     assert session2["_access"] > old_access
     assert len(session2) == 0
+
+
+def test_session_not_new_after_save(sessionmaker):
+    # Session had issue where it was marked as new after it was saved, but
+    # at that point it is NOT new any more
+    session = sessionmaker()
+    cookie = session.save()
+    assert not session.is_new
 
 
 def test_session_cookie_no_str(sessionmaker):
@@ -344,7 +353,7 @@ def test_session(sessionmaker):
 def test_session_delete_other(sessionmaker):
     # Cookie not capable of deleting other data
     if sessionmaker.settings["backend"] == "cookie":
-        return
+        pytest.skip("Cookies cannot delete foreign data")
     sess1 = sessionmaker()
     sess1["key"] = "value1"
     sess1_id = sess1.session_id
