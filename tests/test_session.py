@@ -244,6 +244,11 @@ def test_session_dict_interface(sessionmaker):
         session.popitem()
     assert not session.modified
 
+    session = sessionmaker()
+    session["kéy1"] = "valué1"
+    session["kéy2"] = "valüe2"
+    assert dict(session) == {"kéy1": "valué1", "kéy2": "valüe2"}
+
 
 def test_session_clear(sessionmaker):
     session = sessionmaker()
