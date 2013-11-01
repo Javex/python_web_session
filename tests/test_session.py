@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, absolute_import
+from logging import WARN, INFO, DEBUG
 from pysess import crypto
 from pysess.conf import HASHALG
 from pysess.crypto import authenticate_data, decrypt_authenticated
-from pysess.session.backends import BaseSession
-from pysess.session.cookies import SignedCookie
+from pysess.exc import CryptoError
+from pysess.session.backends import BaseSession, log as backend_log
+from pysess.session.cookies import SignedCookie, log as cookie_log
+from tests import LogCollector
 from tests.test_crypto import test_enc_key, test_sig_key
 import base64
 import hashlib
@@ -12,7 +15,6 @@ import json
 import logging
 import pickle
 import pytest
-from pysess.exc import CryptoError
 
 
 log = logging.getLogger(__name__)
@@ -21,7 +23,6 @@ log = logging.getLogger(__name__)
 """
 Tests to create:
 
-- Invalid signatures & encryption lead to fails & logging
 - Implement and test some kind of concurrency mechanism: We need to have a
   strategy for when a session is accessed from multiple locations (locking?)
   see https://github.com/Javex/python_web_session/wiki/Race-Conditions for
@@ -30,6 +31,52 @@ Tests to create:
 - Maybe even selenium?
 
 """
+
+
+@pytest.fixture(params=[('0' * 64 +
+                         '"a5eb44559a9ecf64ca7c5cf04df006b'
+                         'd1ade073aa20c14243112f459f71d5e4b"')])
+def invalid_sig_cookie(request):
+    cookie = (b"'Set-Cookie: session=%s; Domain=example.com; Path=/'"
+              % base64.b64encode(request.param))
+    return cookie
+
+
+@pytest.fixture(params=[('0' * 64 +
+                         '"a5eb44559a9ecf64ca7c5cf04df006b'
+                         'd1ade073aa20c14243112f459f71d5e4b"')])
+def invalid_sig_on_enc_cookie(request, sessionmaker):
+    sessionmaker.settings['encryption_key'] = test_enc_key
+    cookie = (b"'Set-Cookie: session=%s; Domain=example.com; Path=/'"
+              % base64.b64encode(request.param))
+    return cookie
+
+
+@pytest.fixture(params=[(b'a87cb447758273654ff42bed03a3c3e4d512d287684ed383eea'
+                         b'793c63100bf963j\x14\x14\xdf!\xd2!\x8e_\xcaR\x8e|'
+                         b'\xc2\x10\x11\xdduA\xe7\xb8\xcb"\x00R]\xe0V"A\x98o'
+                         b'\xb4n\xfa\xcd\xc8U!\x92\x95\xb4\xc2\xf4k\x153\xf1'
+                         b'\x98f\xa3\xc6SB\xbe/\xf0~[\xd0\xe4\xaes%!')])
+def invalid_enc_cookie(request, sessionmaker):
+    sessionmaker.settings['encryption_key'] = test_enc_key
+    cookie = (b"'Set-Cookie: session=%s; Domain=example.com; Path=/'"
+              % base64.b64encode(request.param))
+    return cookie
+
+
+@pytest.fixture(params=[(b'5507cf4f0622580ae880af95263cd8c51abed2c49125625b9e2'
+                         b'4cae178faf3963j\x14\x14\xdf\xfb\xd2\xe9\x8e_\xcaR'
+                         b'\x8e|\xc2\x10\x11\xdduA\xe7\xb8\xcb"\x00R]\xe0V"A'
+                         b'\x98o\xb4n\xfa\xcd\xc8U!\x92\x95\xb4\xc2\xf4k\x153'
+                         b'\xf1\x98f\xa3\xc6SB\xbe/\xf0~[\xd0\xe4\xaes%!',
+                             True)])
+def invalid_cookie_general(request, sessionmaker):
+    cookiedata, is_encrypted = request.param
+    if is_encrypted:
+        sessionmaker.settings['encryption_key'] = test_enc_key
+    cookie = (b"'Set-Cookie: session=%s; Domain=example.com; Path=/'"
+              % base64.b64encode(cookiedata))
+    return cookie
 
 
 def test_session_default_params():
@@ -374,3 +421,39 @@ def test_different_hashalg(sessionmaker):
 
     old_session = sessionmaker(str(cookie))
     assert old_session.session_id == session_id
+
+
+def test_invalid_signature(invalid_sig_cookie, sessionmaker):
+    with LogCollector(backend_log) as l:
+        sessionmaker(invalid_sig_cookie)
+        records = [r for r in l.records if r.levelno == WARN]
+        assert len(records) == 1
+        assert "Cryptographic Error 'Invalid Signature'" in records[0].message
+
+
+def test_invalid_sig_on_enc(sessionmaker, invalid_sig_on_enc_cookie):
+    with LogCollector(backend_log) as l:
+        sessionmaker(invalid_sig_on_enc_cookie)
+        records = [r for r in l.records if r.levelno == WARN]
+        assert len(records) == 1
+        assert ("Cryptographic Error 'Signature does not match, "
+                "invalid ciphertext'") in records[0].message
+
+
+def test_invalid_ciphertext(sessionmaker, invalid_enc_cookie):
+    with LogCollector(backend_log) as l:
+        sessionmaker(invalid_enc_cookie)
+        records = [r for r in l.records if r.levelno == WARN]
+        assert len(records) == 1
+        assert ("Cryptographic Error 'Could not retrieve plaintext back "
+                "properly (wrong key or ciphertext?)'") in records[0].message
+
+
+def test_cookie_load_error_general(sessionmaker, invalid_cookie_general):
+    with LogCollector(backend_log) as l:
+        sessionmaker(invalid_cookie_general)
+        records = [r for r in l.records if r.levelno == INFO]
+        not_debug = [r for r in l.records if r.levelno != DEBUG]
+        assert len(records) == 1
+        assert len(not_debug) == 1
+        assert "Error loading cookie" in records[0].message

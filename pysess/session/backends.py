@@ -165,6 +165,14 @@ class BaseSession(object):
                 log.debug('Creating new cookie because of the following '
                           'exception: %s' % e)
                 self._cookie = CookieClass(input=None)
+            except CryptoError as e:
+                log.warning("Cryptographic Error '%s' when loading cookie "
+                            "'%s': %r" % (e.message, cookie, e))
+                self._cookie = CookieClass(input=None)
+            except Exception as e:
+                log.info("Error loading cookie '%s' because of exception '%r'"
+                         % (cookie, e))
+                self._cookie = CookieClass(input=None)
         else:
             log.debug("Starting new session because of empty cookie.")
             self._cookie = CookieClass(input=None)
