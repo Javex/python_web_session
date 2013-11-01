@@ -240,7 +240,7 @@ class BaseSession(object):
         else:
             # There is none yet, create a new one then try again
             log.debug("Creating a new session because none exists yet")
-            self._new_data_cache()
+            self.session_id = self._create_id()
             return self.session_id
 
     @session_id.setter
