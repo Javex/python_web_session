@@ -277,7 +277,14 @@ def test_session_dict_interface(sessionmaker):
     assert session.keys() == ["kéy5"]
     assert session.values() == ["valué5"]
     assert not session.modified
-    assert session.popitem() == ("kéy5", "valué5")
+    del session["kéy5"]
+    session["_internal"] = "internal_value"
+    session["key6"] = "value6"
+    # Make sure the order is correct
+    # TODO: test this against PY3, most likely it won't work.
+    assert str(session._data.keys()) == ("[u'_internal', u'_creation', "
+                                         "u'_access', u'key6']")
+    assert session.popitem() == ("key6", "value6")
     assert session.modified
     with pytest.raises(KeyError):
         session.popitem()

@@ -315,6 +315,7 @@ class BaseSession(object):
 
     @filter_internal
     def iteritems(self):
+        # TODO: does this worK?
         return self._data.iteritems()
 
     @filter_internal
@@ -331,16 +332,15 @@ class BaseSession(object):
         return self._data.keys()
 
     def popitem(self):
-        already_modified = self.modified
-        self.modified = True
-        k, v = self._data.popitem()
-        if k.startswith("_"):
-            self._data[k] = v
-            if not already_modified:
-                self.modified = False
-            {}.popitem()  # This raises the excpetion but it's kinda hacky...
+        keys = self._data.keys()
+        for k in keys:
+            if k.startswith("_"):
+                continue
+            v = self._data.pop(k)
+            self.modified = True
+            return k, v
         else:
-            return (k, v)
+            raise KeyError('popitem(): dictionary is empty')
 
     def values(self):
         return [v for k, v in self._data.items() if not k.startswith("_")]
