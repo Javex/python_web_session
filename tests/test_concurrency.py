@@ -105,22 +105,29 @@ def test_write_conflict(run_thread_test, cookie, sessionmaker):
 
     def write1():
         try:
+            while order_lock.acquire(False):
+                order_lock.release()
             order_lock.acquire()
             session = sessionmaker(cookie)
             session["key"] = "value"
         finally:
-            order_lock.release()
             session.save()
+            order_lock.release()
 
     def write2():
         try:
+            order_lock.acquire()
+            session = sessionmaker(cookie)
+            session.load()
+            order_lock.release()
             while order_lock.acquire(False):
                 order_lock.release()
-            session = sessionmaker(cookie)
+            order_lock.acquire()
             with pytest.raises(RuntimeError):
                 session["key"] = "value2"
         finally:
             session.save()
+            order_lock.release()
 
     run_thread_test(write1, write2)
     session = sessionmaker(cookie)
