@@ -22,31 +22,40 @@ def run_thread_test(sessionmaker, threadmon):
     if sessionmaker.settings["backend"] == 'cookie':
         pytest.skip("Cookie has no threading")
 
-    def _run(write, read):
+    def _run(*threads):
 
-        write = Thread(target=threadmon.wrap(write))
-        read = Thread(target=threadmon.wrap(read))
-        write.start()
-        time.sleep(0.01)
-        read.start()
-        write.join()
-        read.join()
+        thread_list = []
+        for thread in threads:
+            thread_list.append(Thread(target=threadmon.wrap(thread)))
+        for t in thread_list:
+            t.start()
+        for t in thread_list:
+            t.join()
     return _run
 
 
-def test_two_thread_read_lock(run_thread_test, cookie, sessionmaker):
+def test_no_read_lock(run_thread_test, cookie, sessionmaker):
+    data_read = Lock()
+
     def write_data():
-        session = sessionmaker(cookie)
-        session["kéy"] = "valué"
-        time.sleep(0.1)
-        session.save()
+        try:
+            session = sessionmaker(cookie)
+            session["kéy"] = "valué"
+            while data_read.acquire(False):
+                data_read.release()^
+            data_read.acquire()
+        finally:
+            session.save()
+            data_read.release()
 
     def read_data():
         try:
+            data_read.acquire()
             session = sessionmaker(cookie)
-            assert session["kéy"] == "valué"
+            assert "kéy" not in session
         finally:
             session.abort()
+            data_read.release()
 
     run_thread_test(write_data, read_data)
     log.debug("Load main thread")
@@ -54,3 +63,32 @@ def test_two_thread_read_lock(run_thread_test, cookie, sessionmaker):
     log.debug("session created")
     assert session["kéy"] == "valué"
     log.debug("after assertion")
+
+
+def test_write_lock(run_thread_test, cookie, sessionmaker):
+    write1_done = Lock()
+
+    def write1():
+        try:
+            write1_done.acquire()
+            session = sessionmaker(cookie)
+            session["kéy"] = "valué"
+        finally:
+            session.save()
+            write1_done.release()
+
+    def write2():
+        try:
+            while write1_done.acquire(False):
+                write1_done.release()
+            write1_done.acquire()
+            session = sessionmaker(cookie)
+            assert "kéy" not in session
+            session["kéy"] = "valué2"
+        finally:
+            session.save()
+            write1_done.release()
+
+    run_thread_test(write1, write2)
+    session = sessionmaker(cookie)
+    assert session["kéy"] == "valué2"

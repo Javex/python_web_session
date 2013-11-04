@@ -415,7 +415,6 @@ class BaseSession(object):
         :rtype: dict
         """
         # First load data
-        self.locked = self._acquire()
         data = self._load_data()
         log.debug("Loaded data %s with id %s" % (data, id(data)))
 
@@ -461,8 +460,6 @@ class BaseSession(object):
         self._data["_access"] = time.time()
         log.debug("Saving data %s with id %s" % (self._data, id(self._data)))
         self._save_data()
-        if self.locked:
-            self._release()
         self._saved = True
         cookie = self.cookie
         self._data_cache = None
@@ -474,8 +471,6 @@ class BaseSession(object):
         Instead of saving the data, abort the current session and don't save
         any changes.
         """
-        if self.locked:
-            self._release()
         self._aborted = True
         return self.cookie
 
