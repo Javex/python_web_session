@@ -23,10 +23,9 @@ def run_thread_test(sessionmaker, threadmon):
         pytest.skip("Cookie has no threading")
 
     def _run(*threads):
-
         thread_list = []
-        for thread in threads:
-            thread_list.append(Thread(target=threadmon.wrap(thread)))
+        for t in threads:
+            thread_list.append(Thread(target=threadmon.wrap(t)))
         for t in thread_list:
             t.start()
         for t in thread_list:
@@ -39,11 +38,12 @@ def test_no_read_lock(run_thread_test, cookie, sessionmaker):
 
     def write_data():
         try:
+            while data_read.acquire(False):
+                data_read.release()
+            data_read.acquire()
             session = sessionmaker(cookie)
             session["kéy"] = "valué"
-            while data_read.acquire(False):
-                data_read.release()^
-            data_read.acquire()
+            session.save()
         finally:
             session.save()
             data_read.release()
@@ -54,41 +54,75 @@ def test_no_read_lock(run_thread_test, cookie, sessionmaker):
             session = sessionmaker(cookie)
             assert "kéy" not in session
         finally:
+            data_read.release()
             session.abort()
             data_read.release()
 
     run_thread_test(write_data, read_data)
-    log.debug("Load main thread")
     session = sessionmaker(cookie)
-    log.debug("session created")
     assert session["kéy"] == "valué"
-    log.debug("after assertion")
 
 
 def test_write_lock(run_thread_test, cookie, sessionmaker):
-    write1_done = Lock()
+    order_lock = Lock()
 
     def write1():
         try:
-            write1_done.acquire()
+            order_lock.acquire()
             session = sessionmaker(cookie)
-            session["kéy"] = "valué"
+            session.load()
+            order_lock.release()
+            while order_lock.acquire(False):
+                order_lock.release()
+            order_lock.acquire()
+            session["key"] = "value"
         finally:
             session.save()
-            write1_done.release()
+            order_lock.release()
 
     def write2():
         try:
-            while write1_done.acquire(False):
-                write1_done.release()
-            write1_done.acquire()
+            order_lock.acquire()
             session = sessionmaker(cookie)
-            assert "kéy" not in session
-            session["kéy"] = "valué2"
+            session.load()
+            order_lock.release()
+            while order_lock.acquire(False):
+                order_lock.release()
+            order_lock.acquire()
+            session["key2"] = "value2"
         finally:
             session.save()
-            write1_done.release()
+            order_lock.release()
 
     run_thread_test(write1, write2)
     session = sessionmaker(cookie)
-    assert session["kéy"] == "valué2"
+    assert session["key2"] == "value2"
+    assert session["key"] == "value"
+
+
+def test_write_conflict(run_thread_test, cookie, sessionmaker):
+    order_lock = Lock()
+
+    def write1():
+        try:
+            order_lock.acquire()
+            session = sessionmaker(cookie)
+            session["key"] = "value"
+        finally:
+            order_lock.release()
+            session.save()
+
+    def write2():
+        try:
+            while order_lock.acquire(False):
+                order_lock.release()
+            session = sessionmaker(cookie)
+            with pytest.raises(RuntimeError):
+                session["key"] = "value2"
+        finally:
+            session.save()
+
+    run_thread_test(write1, write2)
+    session = sessionmaker(cookie)
+    assert session["key"] == "value"
+

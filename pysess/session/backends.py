@@ -110,7 +110,6 @@ class BaseSession(object):
         if (cookie is not None and not isinstance(cookie, str)):
             raise ValueError("Cookie must be str, cast it explicitly")
         self.modified = False
-        self.locked = False
         self.is_new = False
         self.has_encryption = False
         self._saved = False
