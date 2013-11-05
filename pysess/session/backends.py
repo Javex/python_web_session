@@ -579,6 +579,8 @@ class CookieSession(BaseSession):
         self._cookie[self.name] = (self.session_id, self._get_new_data())
 
     def _load_data(self):
+        if self.name not in self._cookie:
+            return None
         return self._cookie[self.name].value[1]
 
     def exists(self, session_id):

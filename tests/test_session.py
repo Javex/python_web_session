@@ -179,7 +179,7 @@ def test_session_enc(sessionmaker):
     assert plain == session_id
 
 
-def test_session_new(sessionmaker, cache_dict):
+def test_session_new(sessionmaker):
     session = sessionmaker()
     assert session.is_new
     assert not session.modified
@@ -195,6 +195,12 @@ def test_session_new(sessionmaker, cache_dict):
 
     new_session = sessionmaker(str(cookie))
     assert new_session["testkey"] == "testval"
+
+
+def test_session_new_load_data(sessionmaker):
+    session = sessionmaker()
+    ret = session._load_data()
+    assert ret is None
 
 
 def test_session_empty(sessionmaker):
