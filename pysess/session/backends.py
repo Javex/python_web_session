@@ -4,7 +4,7 @@ from pysess.conf import HASHALG
 from pysess.crypto import encryption_available
 from pysess.exc import CryptoError
 from pysess.session.cookies import SignedCookie, EncryptedCookie
-from pysess.util import max_age_to_expires, manage_modified
+from pysess.util import max_age_to_expires
 import Cookie
 import binascii
 import functools
@@ -283,12 +283,12 @@ class BaseSession(UserDict):
 
     # Dict interface
 
-    @manage_modified()
     def __delitem__(self, key):
+        self.modified = True
         return UserDict.__delitem__(self, key)
 
-    @manage_modified()
     def __setitem__(self, key, value):
+        self.modified = True
         log.debug("Setting key '%s' to value '%s'" % (key, value))
         if key.startswith('_'):
             self.internal_data[key] = value
@@ -304,8 +304,8 @@ class BaseSession(UserDict):
     def has_key(self, key):
         return key in self
 
-    @manage_modified()
     def clear(self):
+        self.modified = True
         self._new_data()
 
     # TODO: Should we implement the view{items,keys,values} function and if
