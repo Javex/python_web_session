@@ -56,7 +56,6 @@ def test_no_read_lock(run_thread_test, cookie, sessionmaker):
         finally:
             data_read.release()
             session.abort()
-            data_read.release()
 
     run_thread_test(write_data, read_data)
     session = sessionmaker(cookie)
