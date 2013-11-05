@@ -167,8 +167,8 @@ def test_session_enc(sessionmaker):
     session = sessionmaker()
     session_id = ("a94d3fc0fd42e0f4d860b714b7ca4b2f"
                   "675c5164bfaa50dc1c6ce949b52699dd")
-    session.session_id = session_id
     cookie = session.save()
+    session.session_id = session_id
     data = base64.b64decode(str(cookie).split(";")[0][20:])
     tag, ciphertext = data[:64], data[64:]
     plain = decrypt_authenticated(ciphertext, tag, test_enc_key, test_sig_key,
@@ -177,6 +177,21 @@ def test_session_enc(sessionmaker):
     if sessionmaker.settings["backend"] == "cookie":
         plain = plain[0]
     assert plain == session_id
+
+
+def test_session_id_set(sessionmaker):
+    log.debug("Start set id test")
+    session = sessionmaker()
+    sessid = "0" * 64
+    session.save()
+    session.session_id = sessid
+    assert session.session_id == sessid
+    log.debug("End set id test")
+
+
+def test_session_default_values(sessionmaker):
+    session = sessionmaker()
+    assert session._load_data() is None
 
 
 def test_session_new(sessionmaker):
@@ -360,6 +375,12 @@ def test_session(sessionmaker):
     assert session2.created == old_creation
 
 
+def test_delete_data(sessionmaker):
+    session = sessionmaker()
+    session._delete_data(session.session_id)
+    assert session._load_data() is None
+
+
 def test_session_delete_other(sessionmaker):
     # Cookie not capable of deleting other data
     if sessionmaker.settings["backend"] == "cookie":
@@ -468,3 +489,51 @@ def test_cookie_load_error_general(sessionmaker, invalid_cookie_general):
         assert len(records) == 1
         assert len(not_debug) == 1
         assert "Error loading cookie" in records[0].message
+
+
+def test_get_session_id_from_cookie(sessionmaker):
+    session = sessionmaker()
+    sessid = "0" * 64
+    session.session_id = sessid
+    assert session._get_session_id_from_cookie() == sessid
+
+
+def test_get_session_id_from_cookie_existing(sessionmaker):
+    session = sessionmaker()
+    sessid = session.session_id
+    cookie = session.save()
+
+    session = sessionmaker(str(cookie))
+
+
+def test_set_session_id_to_cookie(sessionmaker):
+    session = sessionmaker()
+    sessid = "0" * 64
+    session._set_session_id_to_cookie(sessid)
+    assert session.session_id == sessid
+
+
+def test_set_session_id_to_cookie_existing(sessionmaker):
+    session = sessionmaker()
+    cookie = session.save()
+
+    session = sessionmaker(str(cookie))
+    sessid = "0" * 64
+    session._set_session_id_to_cookie(sessid)
+    assert session.session_id == sessid
+
+
+def test_set_session_id_to_cookie_data(sessionmaker):
+    session = sessionmaker()
+    sessid = "0" * 64
+    session._set_session_id_to_cookie(sessid)
+    assert session.session_id == sessid
+    assert session._load_data() is None
+
+
+def test_set_session_id_before_save(sessionmaker):
+    session = sessionmaker()
+    sessid = "0" * 64
+    session.session_id = sessid
+    session.save()
+    assert session.session_id == sessid

@@ -576,7 +576,7 @@ class CookieSession(BaseSession):
     def _delete_data(self, session_id):
         if session_id and self.session_id != session_id:
             raise ValueError("Cannot delete foreign sessions.")
-        self._cookie[self.name] = (self.session_id, self._get_new_data())
+        self._cookie[self.name] = (self.session_id, None)
 
     def _load_data(self):
         if self.name not in self._cookie:
@@ -609,5 +609,5 @@ class CookieSession(BaseSession):
         if self.name in self._cookie and self._cookie[self.name].value:
             olddata = self._cookie[self.name].value[1]
         else:
-            olddata = self._get_new_data()
+            olddata = None
         self._cookie[self.name] = (value, olddata)
