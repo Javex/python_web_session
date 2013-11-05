@@ -143,40 +143,6 @@ def max_age_to_expires(max_age, fromtime=None):
     return '{0}-{1}-{2}'.format(rfcdate[:7], rfcdate[8:11], rfcdate[12:])
 
 
-def filter_internal(func):
-    """
-    Wrap an iterator or list function to filter parameters that start with '_'.
-    """
-    @wraps(func)
-    def _filter(*args, **kwargs):
-        ret = func(*args, **kwargs)
-        if isinstance(ret, list):
-            ret_list = []
-            for item in ret:
-                if isinstance(item, tuple) and len(item) == 2:
-                    k, __ = item
-                    if not k.startswith("_"):
-                        ret_list.append(item)
-                else:
-                    if not item.startswith("_"):
-                        ret_list.append(item)
-            return ret_list
-        else:
-            return _generator_filter(ret)
-    return _filter
-
-
-def _generator_filter(gen):
-    for item in gen:
-        if isinstance(item, tuple) and len(item) == 2:
-            k, v = item
-            if not k.startswith("_"):
-                yield (k, v)
-        else:
-            if not item.startswith("_"):
-                yield item
-
-
 class manage_modified(object):
 
     def __init__(self, set_modified=lambda *args, **kwargs: True):
