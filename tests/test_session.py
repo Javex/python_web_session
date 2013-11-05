@@ -184,11 +184,11 @@ def test_session_new(sessionmaker, cache_dict):
     session = sessionmaker()
     assert session.is_new
     assert not session.modified
-    assert session._data_cache is None
+    assert session._data is None
     assert session.created
 
     session["testkey"] = "testval"
-    assert session._data_cache
+    assert session._data
     assert session["testkey"] == "testval"
 
     assert session.session_id
@@ -207,10 +207,10 @@ def test_session_empty(sessionmaker):
     # Load it back
     session_old = sessionmaker(str(cookie))
     assert session_old.session_id == session_id
-    sess_data = session_old._load_data()
-    assert "_access" in sess_data
-    assert "_creation" in sess_data
-    assert sess_data["_creation"] < created_before
+    session_old.load()
+    assert "_access" in session_old.internal_data
+    assert "_creation" in session_old.internal_data
+    assert session_old["_creation"] < created_before
 
 
 def test_session_existing(sessionmaker, existing_session):
@@ -279,11 +279,9 @@ def test_session_dict_interface(sessionmaker):
     assert not session.modified
     del session["kéy5"]
     session["_internal"] = "internal_value"
+    assert "_internal" not in session
+    assert "_internal" in session.internal_data
     session["key6"] = "value6"
-    # Make sure the order is correct
-    # TODO: test this against PY3, most likely it won't work.
-    assert str(session._data.keys()) == ("[u'_internal', u'_creation', "
-                                         "u'_access', u'key6']")
     assert session.popitem() == ("key6", "value6")
     assert session.modified
     with pytest.raises(KeyError):

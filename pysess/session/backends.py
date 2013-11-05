@@ -4,7 +4,7 @@ from pysess.conf import HASHALG
 from pysess.crypto import encryption_available
 from pysess.exc import CryptoError
 from pysess.session.cookies import SignedCookie, EncryptedCookie
-from pysess.util import max_age_to_expires, filter_internal
+from pysess.util import max_age_to_expires, manage_modified
 import Cookie
 import binascii
 import functools
@@ -12,6 +12,11 @@ import json
 import logging
 import os
 import time
+
+try:
+    from collections import UserDict
+except ImportError:
+    from ..compat import UserDict
 
 
 """
@@ -23,7 +28,7 @@ and cookie type.
 log = logging.getLogger(__name__)
 
 
-class BaseSession(object):
+class BaseSession(UserDict):
     """
     Create a new session or load an existing from the backend. The general
     options available to all backends are described here, options specific to
@@ -114,7 +119,7 @@ class BaseSession(object):
         self.has_encryption = False
         self._saved = False
         self._aborted = False
-        self._data_cache = None
+        self._data = None
         log.debug("Recieved cookie '%s'" % cookie)
         self._id_length = settings.get('session_id_length', 32)
         self.enc_key = settings.get('encryption_key', None)
@@ -183,30 +188,43 @@ class BaseSession(object):
     # Internal functions, usually not overwritten
 
     @property
-    def _data(self):
-        if self._data_cache is None:
+    def data(self):
+        if self._data is None:
             if self.session_id is None or self.is_new:
                 log.debug("Creating a new cache due to session id being %s "
                           "and new status being %s"
                           % (self.session_id, self.is_new))
-                self._new_data_cache(self.session_id)
+                self._new_data(self.session_id)
             else:
                 self.load()
-        return self._data_cache
+        return self._data
 
-    def _new_data_cache(self, existing_id=None):
+    @property
+    def internal_data(self):
+        if not hasattr(self, "_internal_data"):
+            # Lazy initialization: Load data when needed
+            self.data
+        return self._internal_data
+
+    @internal_data.setter
+    def internal_data(self, value):
+        self._internal_data = value
+
+    def _new_data(self, existing_id=None):
         log.debug("Creating new data cache")
         self.session_id = existing_id or self._create_id()
-        data = self._get_new_data()
+        data, internal_data = self._get_new_data()
         self.is_new = True
-        self._data_cache = data
+        self._data = data
+        self.internal_data = internal_data
 
     def _get_new_data(self):
         data = {}
+        internal_data = {}
         now = time.time()
-        data['_access'] = now
-        data['_creation'] = now
-        return data
+        internal_data['_access'] = now
+        internal_data['_creation'] = now
+        return data, internal_data
 
     def _create_id(self):
         """
@@ -228,7 +246,7 @@ class BaseSession(object):
         cookie["domain"] = self.domain
         if self.max_age:
             cookie["max-age"] = self.max_age
-            fromtime = self._data["_access"]
+            fromtime = self.internal_data['_access']
             cookie["expires"] = max_age_to_expires(self.max_age, fromtime)
         if self.secure:
             cookie["secure"] = self.secure
@@ -261,89 +279,34 @@ class BaseSession(object):
 
     @property
     def created(self):
-        return self["_creation"]
+        return self.internal_data['_creation']
 
     # Dict interface
 
-    def __contains__(self, key):
-        return key in self._data
-
+    @manage_modified()
     def __delitem__(self, key):
-        self.modified = True
-        del self._data[key]
+        return UserDict.__delitem__(self, key)
 
-    def __getitem__(self, key):
-        return self._data[key]
-
+    @manage_modified()
     def __setitem__(self, key, value):
-        self.modified = True
-        self._data[key] = value
+        log.debug("Setting key '%s' to value '%s'" % (key, value))
+        if key.startswith('_'):
+            self.internal_data[key] = value
+        else:
+            UserDict.__setitem__(self, key, value)
 
-    @filter_internal
-    def __iter__(self):
-        return iter(self._data)
-
-    def __len__(self):
-        return len(self._data) - 2  # Remove count of own items
-
-    def pop(self, key, *args):
-        self.modified = self.modified or key in self
-        return self._data.pop(key, *args)
-
-    def setdefault(self, key, value):
-        if key not in self:
-            self.modified = True
-        return self._data.setdefault(key, value)
-
-    def update(self, *args, **kwargs):
-        self.modified = True
-        return self._data.update(*args, **kwargs)
-
-    def clear(self):
-        self.modified = True
-        self._new_data_cache()
-
-    def get(self, key, default=None):
-        return self._data.get(key, default)
+    def __missing__(self, key):
+        if key in self.internal_data:
+            return self.internal_data[key]
+        else:
+            raise KeyError(key)
 
     def has_key(self, key):
-        return self._data.has_key(key)
+        return key in self
 
-    @filter_internal
-    def items(self):
-        return self._data.items()
-
-    @filter_internal
-    def iteritems(self):
-        # TODO: does this worK?
-        return self._data.iteritems()
-
-    @filter_internal
-    def iterkeys(self):
-        return self._data.iterkeys()
-
-    def itervalues(self):
-        for k, v in self._data.iteritems():
-            if not k.startswith('_'):
-                yield v
-
-    @filter_internal
-    def keys(self):
-        return self._data.keys()
-
-    def popitem(self):
-        keys = self._data.keys()
-        for k in keys:
-            if k.startswith("_"):
-                continue
-            v = self._data.pop(k)
-            self.modified = True
-            return k, v
-        else:
-            raise KeyError('popitem(): dictionary is empty')
-
-    def values(self):
-        return [v for k, v in self._data.items() if not k.startswith("_")]
+    @manage_modified()
+    def clear(self):
+        self._new_data()
 
     # TODO: Should we implement the view{items,keys,values} function and if
     # yes, how? On the same page could be how to port the app to Python 3.
@@ -355,10 +318,12 @@ class BaseSession(object):
         """
         Create a new session identifier but keep the old data.
         """
-        data = self._data
+        data = self.data
+        internal_data = self.internal_data
         key = self.session_id
         self.invalidate(key)
         self.update(data)
+        self.internal_data.update(internal_data)
 
     def invalidate(self, session_id=None):
         """
@@ -414,18 +379,22 @@ class BaseSession(object):
         :rtype: dict
         """
         # First load data
-        data = self._load_data()
+        loaded_data = self._load_data()
+        if loaded_data is not None:
+            data, internal_data = loaded_data
+        else:
+            data = None
         log.debug("Loaded data %s with id %s" % (data, id(data)))
 
         # Check if the data is expired
         expired = False
-        if data and self.max_age:
+        if data is not None and self.max_age:
             max_age = self.max_age
 
             if self.refresh_on_access:
-                reference_time = data["_access"]
+                reference_time = internal_data['_access']
             else:
-                reference_time = data["_creation"]
+                reference_time = internal_data['_creation']
 
             now = time.time()
             delta = now - reference_time
@@ -440,10 +409,11 @@ class BaseSession(object):
             log.debug("Session expired, creating new")
             self.invalidate()
         else:
-            self._data_cache = data
-        # Careful, at this point _data_cache MUST be set or we enter a loop!
-        assert self._data_cache is not None
-        return self._data
+            self._data = data
+            self.internal_data = internal_data
+        # Careful, at this point _data MUST be set or we enter a loop!
+        assert self._data is not None
+        return self.data
 
     def save(self):
         """
@@ -456,12 +426,13 @@ class BaseSession(object):
 
         :rtype: ``SignedCookie`` or ``EncryptedCookie``
         """
-        self._data["_access"] = time.time()
-        log.debug("Saving data %s with id %s" % (self._data, id(self._data)))
-        self._save_data()
+        self.internal_data['_access'] = time.time()
+        to_save = (self.data, self.internal_data)
+        log.debug("Saving data %s with id %s" % (to_save, id(self.data)))
+        self._save_data(to_save)
         self._saved = True
         cookie = self.cookie
-        self._data_cache = None
+        self._data = None
         self.is_new = False
         return cookie
 
@@ -578,17 +549,17 @@ class DogpileSession(BaseSession):
             session_id = self.session_id
         return "session_%s" % session_id
 
-    def _save_data(self):
-        self.region.set(self._data_key(), self._data)
+    def _save_data(self, value):
+        self.region.set(self._data_key(), value)
 
     def _delete_data(self, session_id):
         self.region.delete(self._data_key(session_id))
 
     def _load_data(self):
-        log.debug("Loading data with key %s" % self._data_key())
-        data = self.region.get(self._data_key())
-        log.debug("Recieved data %s" % data)
-        return data.copy() if data else None
+        log.debug("Loading value with key %s" % self._data_key())
+        value = self.region.get(self._data_key())
+        log.debug("Recieved value %s" % str(value))
+        return value if value else None
 
     def exists(self, session_id):
         # We can only retrieve not check so this is a little expensive
@@ -597,8 +568,8 @@ class DogpileSession(BaseSession):
 
 
 class CookieSession(BaseSession):
-    def _save_data(self):
-        self._cookie[self.name] = (self.session_id, self._data.copy())
+    def _save_data(self, value):
+        self._cookie[self.name] = (self.session_id, value)
 
     def _delete_data(self, session_id):
         if session_id and self.session_id != session_id:

@@ -10,9 +10,9 @@ log = logging.getLogger(__name__)
 def test_refresh_on_access(sessionmaker):
     sessionmaker.settings["max_age"] = 10
     session = sessionmaker()
-    session._data["_access"] -= 100
+    session["_access"] -= 100
     # Work around main method to avoid saving of access time
-    session._save_data()
+    session._save_data((session.data, session.internal_data))
     session._saved = True
     cookie = session.cookie
 
@@ -21,7 +21,7 @@ def test_refresh_on_access(sessionmaker):
     assert old_data  # Make sure there was data before
     new_session.load()
     assert new_session.is_new
-    assert old_data != new_session._data
+    assert old_data != new_session.data
 
 
 def test_static_expiry(sessionmaker):
@@ -42,7 +42,7 @@ def test_no_expiry(sessionmaker):
     session = sessionmaker()
     session["_creation"] = 0
     session["_access"] = 0
-    session._save_data()
+    session._save_data((session.data, session.internal_data))
     session._saved = True
     cookie = session.cookie
     cookie = str(cookie)

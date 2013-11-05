@@ -175,3 +175,22 @@ def _generator_filter(gen):
         else:
             if not item.startswith("_"):
                 yield item
+
+
+class manage_modified(object):
+
+    def __init__(self, set_modified=lambda *args, **kwargs: True):
+        self.set_modified = set_modified
+
+    def __call__(self, func):
+        @wraps(func)
+        def _handle(target_self, *args, **kwargs):
+            old_val = target_self.modified
+            target_self.modified = self.set_modified(target_self, *args,
+                                                     **kwargs)
+            try:
+                return func(target_self, *args, **kwargs)
+            except:
+                target_self.modified = old_val
+                raise
+        return _handle
