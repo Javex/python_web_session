@@ -116,7 +116,6 @@ class BaseSession(UserDict):
             raise ValueError("Cookie must be str, cast it explicitly")
         self.modified = False
         self.is_new = False
-        self.has_encryption = False
         self._saved = False
         self._aborted = False
         self._data = None
@@ -139,14 +138,16 @@ class BaseSession(UserDict):
         # Make sure if we have an encryption key that we are also able to
         # encrypt.
         if self.enc_key:
-            enc_avail = encryption_available()
-            if not enc_avail:
+            use_encryption = encryption_available()
+            if not use_encryption:
                 raise CryptoError("Encryption key was given but encryption is "
                                   "not available.")
-            self.has_encryption = enc_avail
+        else:
+            use_encryption = False
+
 
         # Choose the correct class for creating a cookie and prepare it
-        if self.has_encryption:
+        if use_encryption:
             CookieClass = functools.partial(EncryptedCookie,
                                             self.serializer,
                                             self.sig_key,
@@ -311,6 +312,7 @@ class BaseSession(UserDict):
     # TODO: Should we implement the view{items,keys,values} function and if
     # yes, how? On the same page could be how to port the app to Python 3.
     # See: http://stackoverflow.com/questions/17749866/subclassing-datatypes-that-have-views-in-python2-7-and-python3
+    # This could already work if we are on Python 3 (maybe create a PY3-only test?)
 
     # Utility functions that are usually not overwritten
 

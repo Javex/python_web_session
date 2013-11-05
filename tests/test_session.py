@@ -89,7 +89,6 @@ def test_session_default_params():
 
     assert sess._id_length == 32
     assert sess.enc_key is None
-    assert not sess.has_encryption
     assert sess.hashalg is HASHALG
     assert sess.refresh_on_access
     assert sess.serializer is json
