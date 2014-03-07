@@ -6,7 +6,7 @@ from pysess.conf import HASHALG
 from pysess.crypto import authenticate_data, decrypt_authenticated
 from pysess.exc import CryptoError
 from pysess.session.backends import BaseSession, log as backend_log
-from pysess.session.cookies import SignedCookie, log as cookie_log
+from pysess.session.cookies import SignedCookie
 from tests import LogCollector
 from tests.test_crypto import test_enc_key, test_sig_key
 import base64
@@ -70,7 +70,7 @@ def invalid_enc_cookie(request, sessionmaker):
                          b'\x8e|\xc2\x10\x11\xdduA\xe7\xb8\xcb"\x00R]\xe0V"A'
                          b'\x98o\xb4n\xfa\xcd\xc8U!\x92\x95\xb4\xc2\xf4k\x153'
                          b'\xf1\x98f\xa3\xc6SB\xbe/\xf0~[\xd0\xe4\xaes%!',
-                             True)])
+                         True)])
 def invalid_cookie_general(request, sessionmaker):
     cookiedata, is_encrypted = request.param
     if is_encrypted:
@@ -339,7 +339,7 @@ def test_session_not_new_after_save(sessionmaker):
     # Session had issue where it was marked as new after it was saved, but
     # at that point it is NOT new any more
     session = sessionmaker()
-    cookie = session.save()
+    session.save()
     assert not session.is_new
 
 
@@ -500,7 +500,7 @@ def test_get_session_id_from_cookie(sessionmaker):
 
 def test_get_session_id_from_cookie_existing(sessionmaker):
     session = sessionmaker()
-    sessid = session.session_id
+    session.session_id
     cookie = session.save()
 
     session = sessionmaker(str(cookie))

@@ -2,11 +2,9 @@
 from __future__ import unicode_literals, absolute_import
 import time
 from email.utils import formatdate
-from functools import wraps
 import os
 import stat
 import json
-import base64
 import logging
 
 
@@ -141,4 +139,3 @@ def max_age_to_expires(max_age, fromtime=None):
     expires_time = fromtime + max_age
     rfcdate = formatdate(expires_time, usegmt=True)
     return '{0}-{1}-{2}'.format(rfcdate[:7], rfcdate[8:11], rfcdate[12:])
-

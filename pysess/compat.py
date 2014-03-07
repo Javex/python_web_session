@@ -4,9 +4,10 @@ This module contains resources only available in Python 3 to port them to
 Python 2
 """
 
-################################################################################
+###############################################################################
 ### UserDict
-################################################################################
+###############################################################################
+
 
 class UserDict(MutableMapping):
 
@@ -17,15 +18,23 @@ class UserDict(MutableMapping):
             self.update(dict)
         if len(kwargs):
             self.update(kwargs)
-    def __len__(self): return len(self.data)
+
+    def __len__(self):
+        return len(self.data)
+
     def __getitem__(self, key):
         if key in self.data:
             return self.data[key]
         if hasattr(self.__class__, "__missing__"):
             return self.__class__.__missing__(self, key)
         raise KeyError(key)
-    def __setitem__(self, key, item): self.data[key] = item
-    def __delitem__(self, key): del self.data[key]
+
+    def __setitem__(self, key, item):
+        self.data[key] = item
+
+    def __delitem__(self, key):
+        del self.data[key]
+
     def __iter__(self):
         return iter(self.data)
 
@@ -34,7 +43,9 @@ class UserDict(MutableMapping):
         return key in self.data
 
     # Now, add the methods in dicts but not in MutableMapping
-    def __repr__(self): return repr(self.data)
+    def __repr__(self):
+        return repr(self.data)
+
     def copy(self):
         if self.__class__ is UserDict:
             return UserDict(self.data.copy())
@@ -47,6 +58,7 @@ class UserDict(MutableMapping):
             self.data = data
         c.update(self)
         return c
+
     @classmethod
     def fromkeys(cls, iterable, value=None):
         d = cls()

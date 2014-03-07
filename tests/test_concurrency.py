@@ -3,7 +3,6 @@ from __future__ import unicode_literals, print_function, absolute_import
 from threading import Thread, Lock
 import logging
 import pytest
-import time
 
 
 log = logging.getLogger(__name__)

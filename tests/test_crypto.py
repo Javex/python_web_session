@@ -2,7 +2,8 @@
 from __future__ import unicode_literals, absolute_import
 from pysess import crypto
 from pysess.crypto import (encrypt_then_authenticate, decrypt_authenticated,
-    get_hash_length, authenticate_data, verify_data, encryption_available)
+                           get_hash_length, authenticate_data, verify_data,
+                           encryption_available)
 import hashlib
 import hmac
 import pytest

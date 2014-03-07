@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, absolute_import
 from datetime import datetime
-from pysess.util import (max_age_to_expires, create_secret_file, get_secret_keys,
-    permissions_okay, compare_constant_time, get_or_create_secret_keys)
+from pysess.util import (max_age_to_expires, create_secret_file,
+                         get_secret_keys, permissions_okay,
+                         compare_constant_time, get_or_create_secret_keys)
 from tempfile import NamedTemporaryFile
 import calendar
 import itertools

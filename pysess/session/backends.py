@@ -145,7 +145,6 @@ class BaseSession(UserDict):
         else:
             use_encryption = False
 
-
         # Choose the correct class for creating a cookie and prepare it
         if use_encryption:
             CookieClass = functools.partial(EncryptedCookie,

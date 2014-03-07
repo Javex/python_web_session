@@ -56,12 +56,12 @@ def test_sessionmaker_new_conf(cache_dict):
     except ImportError:
         pytest.skip("dogpile.cache not available")
     region = make_region().configure('dogpile.cache.memory',
-                            arguments={'cache_dict': cache_dict})
+                                     arguments={'cache_dict': cache_dict})
     settings = {'backend': 'dogpile',
                 'domain': 'example.com',
                 'signature_key': test_sig_key,
                 'region': region
-               }
+                }
     Session = sessionmaker()
     assert not hasattr(Session, "settings")
     Session.configure(**settings)

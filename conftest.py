@@ -28,7 +28,7 @@ def sessionmaker(request, cache_dict):
     settings = {'backend': backend,
                 'domain': 'example.com',
                 'signature_key': test_sig_key,
-               }
+                }
     if backend == 'dogpile':
         try:
             from dogpile.cache import make_region
@@ -108,7 +108,7 @@ class ThreadMonitor(object):
         def threadMonitorWrapper(*args, **kw):
             try:
                 ret = function(*args, **kw)
-            except Exception as e:
+            except Exception:
                 self.queue.put(sys.exc_info())
                 raise
 
