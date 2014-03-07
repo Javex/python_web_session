@@ -1,5 +1,5 @@
 from __future__ import unicode_literals, absolute_import
-from distutils.core import setup, Command
+from setuptools import setup, Command
 import os
 import re
 import subprocess
