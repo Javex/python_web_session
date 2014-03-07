@@ -81,6 +81,8 @@ def test_write_lock(run_thread_test, cookie, sessionmaker):
 
     def write2():
         try:
+            while order_lock.acquire(False):
+                order_lock.release()
             order_lock.acquire()
             session = sessionmaker(cookie)
             session.load()
@@ -131,4 +133,3 @@ def test_write_conflict(run_thread_test, cookie, sessionmaker):
     run_thread_test(write1, write2)
     session = sessionmaker(cookie)
     assert session["key"] == "value"
-
